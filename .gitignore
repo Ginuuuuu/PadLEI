@@ -1,0 +1,10 @@
+.env.local
+.env*.local
+.next
+node_modules
+data
+dist
+coverage
+firebase-debug.log
+*-firebase-adminsdk-*.json
+serviceAccount*.json

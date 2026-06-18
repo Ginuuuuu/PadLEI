@@ -1,0 +1,106 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function currentUser() {
+      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+    }
+
+    function isApproved() {
+      return signedIn() && currentUser().data.approved == true;
+    }
+
+    function isAdmin() {
+      return isApproved() && currentUser().data.role == "admin";
+    }
+
+    function isBootstrapAdminCreate(userId) {
+      return signedIn()
+        && userId == request.auth.uid
+        && request.auth.token.email == "reshin0026@gmail.com"
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.approved == true
+        && request.resource.data.role == "admin";
+    }
+
+    function hasEmailApproval() {
+      return signedIn()
+        && exists(/databases/$(database)/documents/approvals/$(request.auth.token.email))
+        && get(/databases/$(database)/documents/approvals/$(request.auth.token.email)).data.approved == true;
+    }
+
+    function isApprovedEmailUserCreate(userId) {
+      return signedIn()
+        && userId == request.auth.uid
+        && hasEmailApproval()
+        && request.resource.data.uid == request.auth.uid
+        && request.resource.data.email == request.auth.token.email
+        && request.resource.data.approved == true
+        && request.resource.data.role == get(/databases/$(database)/documents/approvals/$(request.auth.token.email)).data.role;
+    }
+
+    function ownsUserData() {
+      return isApproved() && resource.data.userId == request.auth.uid;
+    }
+
+    function createsOwnUserData() {
+      return isApproved() && request.resource.data.userId == request.auth.uid;
+    }
+
+    match /users/{userId} {
+      allow read: if isAdmin()
+        || (signedIn() && userId == request.auth.uid)
+        || (signedIn() && resource.data.email == request.auth.token.email);
+      allow create: if isAdmin() || isBootstrapAdminCreate(userId) || isApprovedEmailUserCreate(userId);
+      allow update, delete: if isAdmin();
+      allow update: if signedIn()
+        && userId == request.auth.uid
+        && resource.data.approved == true
+        && request.resource.data.approved == true
+        && request.resource.data.role == resource.data.role
+        && request.resource.data.email == resource.data.email
+        && request.resource.data.uid == resource.data.uid;
+    }
+
+    match /approvals/{email} {
+      allow read: if isAdmin() || (signedIn() && email == request.auth.token.email);
+      allow create, update, delete: if isAdmin();
+    }
+
+    match /pdfs/{pdfId} {
+      allow read, delete: if isAdmin() || ownsUserData();
+      allow create: if createsOwnUserData()
+        && request.resource.data.fileName is string
+        && request.resource.data.storagePath.matches("users/" + request.auth.uid + "/pdfs/.*");
+      allow update: if isAdmin() || ownsUserData();
+    }
+
+    match /questions/{questionId} {
+      allow read, delete: if isAdmin() || ownsUserData();
+      allow create: if createsOwnUserData();
+      allow update: if isAdmin() || ownsUserData();
+    }
+
+    match /examResults/{resultId} {
+      allow read, delete: if isAdmin() || ownsUserData();
+      allow create: if createsOwnUserData();
+      allow update: if false;
+    }
+
+    match /quotes/{quoteId} {
+      allow read, delete: if ownsUserData();
+      allow create: if createsOwnUserData();
+      allow update: if ownsUserData();
+    }
+
+    match /progress/{progressId} {
+      allow read, delete: if ownsUserData();
+      allow create: if createsOwnUserData();
+      allow update: if ownsUserData();
+    }
+  }
+}
