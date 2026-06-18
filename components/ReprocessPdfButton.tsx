@@ -22,9 +22,9 @@ export function ReprocessPdfButton({ pdfId, className }: { pdfId: string; classN
         },
         body: JSON.stringify({ pdfId })
       });
-      const payload = (await response.json()) as { totalQuestions?: number; needsReview?: number; error?: string };
+      const payload = (await response.json()) as { totalQuestions?: number; readyQuestions?: number; needsReview?: number; error?: string };
       if (!response.ok) throw new Error(payload.error || "Reprocess failed.");
-      toast.success(`Reprocessed ${payload.totalQuestions || 0} questions`);
+      toast.success(`Reprocessed ${payload.totalQuestions || 0} questions: ${payload.readyQuestions || 0} ready, ${payload.needsReview || 0} need review.`);
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not reprocess PDF", { duration: 9000 });
     } finally {

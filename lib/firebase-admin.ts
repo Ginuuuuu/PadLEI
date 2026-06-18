@@ -9,13 +9,19 @@ function privateKey() {
 }
 
 function serviceAccountFromFile() {
-  if (!process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH) return null;
-  const contents = readFileSync(process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH, "utf8");
-  return JSON.parse(contents) as {
-    project_id: string;
-    client_email: string;
-    private_key: string;
-  };
+  const serviceAccountPath = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH?.trim();
+  if (!serviceAccountPath || process.env.VERCEL) return null;
+
+  try {
+    const contents = readFileSync(serviceAccountPath, "utf8");
+    return JSON.parse(contents) as {
+      project_id: string;
+      client_email: string;
+      private_key: string;
+    };
+  } catch {
+    return null;
+  }
 }
 
 const serviceAccount = serviceAccountFromFile();

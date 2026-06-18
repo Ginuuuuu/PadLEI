@@ -12,7 +12,7 @@ import { ReprocessPdfButton } from "@/components/ReprocessPdfButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getVisibleOptionKeys } from "@/lib/question-options";
+import { getVisibleOptionKeys, isReadyQuestion } from "@/lib/question-options";
 import type { Progress, Question } from "@/types/models";
 
 export function StudyViewer({ pdfId }: { pdfId: string }) {
@@ -48,7 +48,7 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
 
   const filtered = useMemo(() => {
     const needle = queryText.trim().toLowerCase();
-    const readyQuestions = questions.filter((item) => item.status === "ready");
+    const readyQuestions = questions.filter(isReadyQuestion);
     if (!needle) return readyQuestions;
     return readyQuestions.filter((question) => question.questionText.toLowerCase().includes(needle) || String(question.questionNumber) === needle);
   }, [questions, queryText]);

@@ -6,11 +6,12 @@ A production-ready Next.js + Firebase web app for approved students to upload MC
 
 - Login-only access with Google and email/password.
 - Admin-approved users only, with role-based admin/user protection.
+- Public login access request modal with admin approval and Firebase Auth user creation.
 - Firebase Authentication and Firestore for accounts/data.
 - Cloudinary PDF storage with local fallback for development.
 - PDF upload with server processing, permanent per-user metadata, and delete flow.
 - MCQ extraction API using PDF text parsing and local rendered-page OCR for scanned PDFs.
-- Question review/edit screen.
+- Question review/edit screen that keeps `needsReview` questions separate from ready study/exam questions.
 - Study mode with answer reveal, search, bookmarks, learned state, and progress.
 - Exam setup with PDF, question range, count, random/sequential order, timer, marks, and optional negative marks.
 - Exam runner with palette, marked review, auto-submit timer, and confirmation.
@@ -71,7 +72,7 @@ A production-ready Next.js + Firebase web app for approved students to upload MC
    firebase deploy --only firestore:rules
    ```
 
-   Admin user creation note: the app admin panel can create Firebase Authentication users automatically only when `FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, and `FIREBASE_ADMIN_PRIVATE_KEY` are set in `.env.local` or Vercel. Without those values, Firebase Admin cannot create Auth users from the app.
+   Admin user creation note: the app admin panel and login-request approval flow can create Firebase Authentication users automatically only when `FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, and `FIREBASE_ADMIN_PRIVATE_KEY` are set in `.env.local` or Vercel.
 
 7. Run locally:
 
@@ -121,7 +122,7 @@ A production-ready Next.js + Firebase web app for approved students to upload MC
    FIREBASE_ADMIN_PRIVATE_KEY=
    ```
 
-   Do not use `FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH` on Vercel. Paste the private key into `FIREBASE_ADMIN_PRIVATE_KEY`; if Vercel stores it with escaped line breaks, the app converts `\n` back to real newlines.
+   Do not use `FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH` on Vercel. That variable is only for a local JSON file and will cause `ENOENT: no such file or directory` during deployment if Vercel tries to open it. Paste the private key into `FIREBASE_ADMIN_PRIVATE_KEY`; if Vercel stores it with escaped line breaks, the app converts `\n` back to real newlines.
 
 4. In Firebase Console, add the deployed Vercel domain:
 
@@ -168,9 +169,30 @@ Explanation: Optional explanation
 
 Text-based PDFs are parsed directly. For scanned PDFs, the app renders PDF pages locally and runs `tesseract.js` OCR. `OCR_MAX_PAGES` controls the maximum scanned pages per PDF, defaulting to 60.
 
+## Review Workflow
+
+- Extracted questions with reliable text, options, and an answer are saved as `status: "ready"`.
+- Uncertain questions are saved as `status: "needsReview"` with a `confidence` score.
+- Study and Exam only use ready questions.
+- Open a PDF, use the Needs Review tab, fix text/options/answer/explanation, then click `Mark as Ready`.
+- The PDF card updates `totalQuestions`, `readyQuestions`, and `needsReviewQuestions` after edits.
+
+## Login Requests
+
+New users can click `Request Login Access` on the login page. The request is saved in `loginRequests`, and WhatsApp opens with the approval message for the admin.
+
+Admins manage requests in `Admin > Login Requests`:
+
+- Approve as User
+- Approve as Admin
+- Reject
+- Delete Request
+- Override the requested password before approval
+
 ## Firebase Collections
 
 - `users`
+- `loginRequests`
 - `pdfs`
 - `questions`
 - `examResults`
@@ -180,6 +202,5 @@ Text-based PDFs are parsed directly. For scanned PDFs, the app renders PDF pages
 ## Contact Displayed On Login
 
 - Email: reshin0026@gmail.com
-- Instagram: reshin.___
 - WhatsApp: 8807905821
 - Developer: Ginu

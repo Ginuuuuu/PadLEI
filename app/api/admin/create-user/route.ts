@@ -43,18 +43,20 @@ export async function POST(request: Request) {
     }
 
     const createdAt = new Date().toISOString();
+    const updatedAt = createdAt;
     const userRecord = {
       uid,
       email,
       name: "",
       role,
       approved: true,
-      createdAt
+      createdAt,
+      updatedAt
     };
 
     await Promise.all([
       adminDb.collection("users").doc(uid).set(userRecord, { merge: true }),
-      adminDb.collection("approvals").doc(email).set({ email, role, approved: true, createdAt }, { merge: true }),
+      adminDb.collection("approvals").doc(email).set({ email, role, approved: true, createdAt, updatedAt }, { merge: true }),
       adminDb.collection("users").doc(`pending_${email.replace(/[^a-z0-9]/gi, "_")}`).delete().catch(() => undefined)
     ]);
 

@@ -2,7 +2,7 @@
 
 import { FormEvent, useState } from "react";
 import { useRouter } from "next/navigation";
-import { GraduationCap, Instagram, Mail } from "lucide-react";
+import { GraduationCap, Mail, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -18,6 +18,9 @@ export default function LoginPage() {
   const [password, setPassword] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
   const [googleBusy, setGoogleBusy] = useState(false);
+  const [loginError, setLoginError] = useState("");
+  const [requestOpen, setRequestOpen] = useState(false);
+  const [requestBusy, setRequestBusy] = useState(false);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -26,7 +29,9 @@ export default function LoginPage() {
       await loginWithEmail(email, password);
       router.push("/dashboard");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : "Access denied. Please contact admin for login access.");
+      const message = error instanceof Error ? error.message : "Access denied. New users must request login access from Admin.";
+      setLoginError(message);
+      toast.error(message);
     } finally {
       setEmailBusy(false);
     }
@@ -38,9 +43,46 @@ export default function LoginPage() {
       await withTimeout(loginWithGoogle(), 25000, googleTimeoutMessage);
       router.push("/dashboard");
     } catch (error) {
-      toast.error(error instanceof Error ? error.message : googleTimeoutMessage);
+      const message = error instanceof Error ? error.message : googleTimeoutMessage;
+      setLoginError(message);
+      toast.error(message);
     } finally {
       setGoogleBusy(false);
+    }
+  }
+
+  async function requestAccess(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const form = new FormData(event.currentTarget);
+    const fullName = String(form.get("fullName") || "").trim();
+    const gmail = String(form.get("gmail") || "").toLowerCase().trim();
+    const preferredPassword = String(form.get("preferredPassword") || "").trim();
+    const confirmPassword = String(form.get("confirmPassword") || "").trim();
+
+    if (!fullName || !gmail || !preferredPassword || !confirmPassword) return toast.error("All fields are required.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(gmail)) return toast.error("Enter a valid Gmail address.");
+    if (preferredPassword.length < 6) return toast.error("Password must be at least 6 characters.");
+    if (preferredPassword !== confirmPassword) return toast.error("Passwords must match.");
+
+    setRequestBusy(true);
+    try {
+      const response = await fetch("/api/login-request", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fullName, gmail, preferredPassword, confirmPassword })
+      });
+      const payload = (await response.json()) as { error?: string };
+      if (!response.ok) throw new Error(payload.error || "Could not submit request.");
+
+      const message = `Hello Admin, I am requesting login access.\n\nName: ${fullName}\nGmail: ${gmail}\nPreferred Password: ${preferredPassword}\n\nPlease approve my account.`;
+      window.open(`https://wa.me/918807905821?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
+      toast.success("Request sent. WhatsApp opened for admin notification.");
+      setRequestOpen(false);
+      event.currentTarget.reset();
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Could not submit request.");
+    } finally {
+      setRequestBusy(false);
     }
   }
 
@@ -62,22 +104,47 @@ export default function LoginPage() {
           <Input type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} required />
           <Button className="w-full" disabled={emailBusy || googleBusy}>{emailBusy ? "Checking access..." : "Login"}</Button>
         </form>
+        {loginError ? (
+          <div className="mt-4 rounded-lg bg-red-50 p-3 text-sm text-red-700">
+            <p>{loginError.includes("Access denied") ? "Access denied. New users must request login access from Admin." : loginError}</p>
+          </div>
+        ) : null}
         <div className="mt-6 rounded-lg bg-slate-50 p-4 text-center">
           <p className="text-sm font-semibold text-ink">Need access? Contact admin</p>
           <div className="mt-4 flex items-center justify-center gap-3">
             <a className="focus-ring grid h-11 w-11 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-aqua hover:text-aqua" href="https://mail.google.com/mail/?view=cm&fs=1&to=reshin0026@gmail.com" target="_blank" rel="noreferrer" aria-label="Contact admin by Gmail" title="Gmail">
               <Mail className="h-5 w-5" />
             </a>
-            <a className="focus-ring grid h-11 w-11 place-items-center rounded-lg border border-slate-200 bg-white text-slate-700 transition hover:border-berry hover:text-berry" href="https://instagram.com/reshin.___" target="_blank" rel="noreferrer" aria-label="Contact admin on Instagram" title="Instagram">
-              <Instagram className="h-5 w-5" />
-            </a>
             <a className="focus-ring grid h-11 w-11 place-items-center rounded-lg border border-green-100 bg-[#25D366] text-white transition hover:bg-[#1ebe5d]" href="https://wa.me/918807905821" target="_blank" rel="noreferrer" aria-label="Contact admin on WhatsApp" title="WhatsApp">
               <WhatsAppIcon />
             </a>
           </div>
+          <Button className="mt-4 w-full" variant="secondary" onClick={() => setRequestOpen(true)}>Request Login Access</Button>
           <p className="mt-4 text-xs font-semibold text-slate-500">Developer: Ginu</p>
         </div>
       </Card>
+      {requestOpen ? (
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-4 py-6 backdrop-blur-sm">
+          <Card className="w-full max-w-lg">
+            <div className="flex items-center justify-between gap-3">
+              <div>
+                <h2 className="text-lg font-bold">Request Login Access</h2>
+                <p className="mt-1 text-sm text-slate-500">Your request goes to Admin for approval.</p>
+              </div>
+              <Button className="h-11 w-11 px-0" variant="ghost" onClick={() => setRequestOpen(false)} aria-label="Close request form">
+                <X className="h-5 w-5" />
+              </Button>
+            </div>
+            <form className="mt-5 space-y-3" onSubmit={requestAccess}>
+              <Input name="fullName" placeholder="Full Name" required />
+              <Input name="gmail" type="email" placeholder="Gmail" required />
+              <Input name="preferredPassword" type="password" placeholder="Preferred Password" minLength={6} required />
+              <Input name="confirmPassword" type="password" placeholder="Confirm Password" minLength={6} required />
+              <Button className="w-full" disabled={requestBusy}>{requestBusy ? "Submitting..." : "Submit Request"}</Button>
+            </form>
+          </Card>
+        </div>
+      ) : null}
     </main>
   );
 }

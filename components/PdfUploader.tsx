@@ -57,6 +57,7 @@ export function PdfUploader() {
         bucketName?: string;
         localFallback?: boolean;
         totalQuestions?: number;
+        readyQuestions?: number;
         needsReview?: number;
         extractionError?: string;
         error?: string;
@@ -66,7 +67,7 @@ export function PdfUploader() {
       if (uploaded.extractionError) {
         toast.error(`PDF uploaded, but extraction failed: ${uploaded.extractionError}`, { duration: 10000 });
       } else if (uploaded.needsReview) {
-        toast.success(`${uploaded.localFallback ? "PDF saved locally. " : "PDF uploaded. "}${uploaded.totalQuestions || 0} questions found, ${uploaded.needsReview} need review.`);
+        toast.success(`${uploaded.localFallback ? "PDF saved locally. " : "PDF uploaded. "}${uploaded.readyQuestions || 0} ready, ${uploaded.needsReview} need review.`);
       } else {
         toast.success(`${uploaded.localFallback ? "PDF saved locally. " : "PDF uploaded. "}${uploaded.totalQuestions || 0} questions are ready.`);
       }

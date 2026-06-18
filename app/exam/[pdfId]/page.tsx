@@ -1,6 +1,7 @@
 "use client";
 
 import { FormEvent, useEffect, useState } from "react";
+import Link from "next/link";
 import { collection, doc, getDoc, onSnapshot, query, where } from "firebase/firestore";
 import { useParams } from "next/navigation";
 import { AppShell } from "@/components/AppShell";
@@ -13,6 +14,7 @@ import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { db } from "@/lib/firebase";
 import { handleSnapshotError } from "@/lib/firestore-errors";
+import { isReadyQuestion } from "@/lib/question-options";
 import { safeNumber } from "@/lib/utils";
 import type { ExamSettings, PdfFile, Question } from "@/types/models";
 
@@ -22,7 +24,9 @@ export default function ExamPage() {
   const [pdf, setPdf] = useState<PdfFile | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [settings, setSettings] = useState<ExamSettings | null>(null);
-  const maxQuestion = Math.max(...questions.map((item) => item.questionNumber), 1);
+  const readyQuestions = questions.filter(isReadyQuestion);
+  const reviewCount = Math.max(0, questions.length - readyQuestions.length);
+  const maxQuestion = Math.max(...readyQuestions.map((item) => item.questionNumber), 1);
 
   useEffect(() => {
     if (!appUser) return;
@@ -59,12 +63,26 @@ export default function ExamPage() {
         <PageHeader title={settings ? "Mock Test" : "Configure Mock Test"} description={pdf?.fileName || "Set your test preferences before beginning."} />
         {settings ? (
           <ExamRunner allQuestions={questions} settings={settings} />
+        ) : !readyQuestions.length ? (
+          <Card className="text-sm text-slate-600">
+            <p>No ready questions are available for this PDF yet.</p>
+            {reviewCount ? <p className="mt-2">{reviewCount} questions need review before they can appear in a mock test.</p> : null}
+            <div className="mt-4 flex flex-wrap gap-2">
+              <Button asChild><Link href={`/pdfs/${params.pdfId}`}>Review questions</Link></Button>
+              <Button variant="secondary" asChild><Link href="/upload">Back to PDFs</Link></Button>
+            </div>
+          </Card>
         ) : (
           <Card>
+            <div className="mb-5 grid gap-2 text-sm sm:grid-cols-3">
+              <span className="rounded-lg bg-slate-50 px-3 py-2"><b className="block text-ink">{questions.length}</b>Total extracted</span>
+              <span className="rounded-lg bg-emerald-50 px-3 py-2 text-emerald-700"><b className="block">{readyQuestions.length}</b>Ready for exam</span>
+              <span className="rounded-lg bg-amber-50 px-3 py-2 text-amber-700"><b className="block">{reviewCount}</b>Needs review</span>
+            </div>
             <form className="grid gap-4 sm:grid-cols-2" onSubmit={start}>
               <Field label="From question"><Input name="fromQuestion" type="number" min={1} defaultValue={1} /></Field>
               <Field label="To question"><Input name="toQuestion" type="number" min={1} defaultValue={maxQuestion} /></Field>
-              <Field label="Number of questions"><Input name="questionCount" type="number" min={1} defaultValue={Math.min(30, questions.length || 30)} /></Field>
+              <Field label="Number of questions"><Input name="questionCount" type="number" min={1} max={readyQuestions.length} defaultValue={Math.min(30, readyQuestions.length)} /></Field>
               <Field label="Order"><Select name="order" defaultValue="random"><option value="random">Random</option><option value="sequential">Sequential</option></Select></Field>
               <Field label="Optional timer minutes"><Input name="timerMinutes" type="number" min={0} placeholder="No timer" /></Field>
               <Field label="Marks per correct"><Input name="marksPerCorrect" type="number" min={1} defaultValue={1} /></Field>

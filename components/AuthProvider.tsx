@@ -25,7 +25,7 @@ type AuthContextValue = {
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
-const denied = "Access denied. Please contact admin for login access.";
+const denied = "Access denied. New users must request login access from Admin.";
 const bootstrapAdminEmail = process.env.NEXT_PUBLIC_BOOTSTRAP_ADMIN_EMAIL?.toLowerCase().trim();
 
 export function AuthProvider({ children }: { children: ReactNode }) {
@@ -78,7 +78,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
     if (!record?.approved) {
       await signOut(auth);
-      throw new Error(`Access denied for ${user.email}. Ask admin to approve this exact email.`);
+      throw new Error(denied);
     }
 
     setAppUser(record);
@@ -129,7 +129,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: user.displayName || "Admin",
         role: "admin",
         approved: true,
-        createdAt: new Date().toISOString()
+        createdAt: new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       };
     }
 
@@ -143,7 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         name: user.displayName || record.name || "",
         role: record.role || "user",
         approved: true,
-        createdAt: record.createdAt || new Date().toISOString()
+        createdAt: record.createdAt || new Date().toISOString(),
+        updatedAt: new Date().toISOString()
       },
       { merge: true }
     );
@@ -196,7 +198,7 @@ function readableAuthError(error: unknown, fallback: string) {
   if (code === "auth/popup-blocked") return "Google popup was blocked. Allow popups for this site and try again.";
   if (code === "auth/unauthorized-domain") return "This local domain is not allowed in Firebase Authentication settings.";
   if (code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/wrong-password") {
-    return "Email/password account not found or password is wrong. Admin approval does not create a Firebase Auth password account. Create this user in Firebase Authentication, or use Google login with the approved email.";
+    return "Email/password account not found or password is wrong. Request login access and wait for Admin approval, or ask Admin to reset your password.";
   }
 
   return message || fallback;

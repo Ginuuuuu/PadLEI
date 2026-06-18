@@ -43,11 +43,13 @@ export async function POST(request: Request) {
       uploadedAt: new Date().toISOString(),
       status: "uploaded",
       totalQuestions: 0,
+      readyQuestions: 0,
+      needsReviewQuestions: 0,
       errorMessage: stored.localFallback ? "Cloudinary is not configured yet. PDF saved locally, so text PDFs will work on this computer." : ""
     };
 
     await adminDb.collection("pdfs").doc(pdfId).set(pdf);
-    let extraction = { totalQuestions: 0, needsReview: 0 };
+    let extraction = { totalQuestions: 0, readyQuestions: 0, needsReview: 0 };
     let extractionError = "";
 
     try {
@@ -70,6 +72,7 @@ export async function POST(request: Request) {
       fileName: file.name,
       localFallback: stored.localFallback,
       totalQuestions: extraction.totalQuestions,
+      readyQuestions: extraction.readyQuestions,
       needsReview: extraction.needsReview,
       extractionError
     });

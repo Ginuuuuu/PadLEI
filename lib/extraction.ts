@@ -82,7 +82,7 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
       options: emptyOptions(),
       correctAnswer: "",
       explanation: "",
-      status: "needs_review",
+      status: "needsReview",
       extractionNote: ""
     };
     lastOption = null;
@@ -205,7 +205,7 @@ function parseBlock(block: string, fallbackNumber: number, answerKey: Map<number
     options,
     correctAnswer,
     explanation,
-    status: "needs_review",
+    status: "needsReview",
     extractionNote: correctAnswer
       ? highlightedAnswer === correctAnswer
         ? "Answer detected from highlighted/marked option."

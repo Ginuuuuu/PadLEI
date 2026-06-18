@@ -1,6 +1,7 @@
 import { GoogleAuth } from "google-auth-library";
 import { adminDb } from "@/lib/firebase-admin";
 import { parseMcqLines, parseMcqText, sanitizeText, type ExtractedLine, type ParsedQuestion } from "@/lib/extraction";
+import { isReadyQuestion, normalizeQuestionStatus, questionCounts } from "@/lib/question-options";
 import { cloudinaryPageImageUrl, getPdfBucket, isCloudinaryPdfPath, isLocalPdfPath, readPdfBuffer } from "@/lib/server-pdf-storage";
 import type { Question } from "@/types/models";
 
@@ -81,20 +82,22 @@ export async function processPdfBuffer({
     }
 
     await replaceQuestions(pdfId, questions);
-    const needsReview = questions.filter((question) => question.status === "needs_review").length;
+    const { readyQuestions, needsReviewQuestions } = questionCounts(questions);
     await adminDb.collection("pdfs").doc(pdfId).set(
       {
         status: "completed",
         totalQuestions: questions.length,
-        errorMessage: needsReview ? `${needsReview} questions need review before exam.` : ""
+        readyQuestions,
+        needsReviewQuestions,
+        errorMessage: needsReviewQuestions ? `${needsReviewQuestions} questions need review before exam.` : ""
       },
       { merge: true }
     );
 
-    return { totalQuestions: questions.length, needsReview };
+    return { totalQuestions: questions.length, readyQuestions, needsReview: needsReviewQuestions };
   } catch (error) {
     const message = formatExtractionError(error);
-    await adminDb.collection("pdfs").doc(pdfId).set({ status: "failed", totalQuestions: 0, errorMessage: message }, { merge: true });
+    await adminDb.collection("pdfs").doc(pdfId).set({ status: "failed", totalQuestions: 0, readyQuestions: 0, needsReviewQuestions: 0, errorMessage: message }, { merge: true });
     throw new Error(message);
   }
 }
@@ -115,6 +118,7 @@ async function replaceQuestions(pdfId: string, questions: Question[]) {
 function normalizeQuestion(question: Question): Question {
   return {
     id: question.id,
+    questionId: question.questionId || question.id,
     pdfId: question.pdfId,
     userId: question.userId,
     questionNumber: Number.isFinite(question.questionNumber) ? question.questionNumber : 0,
@@ -129,7 +133,8 @@ function normalizeQuestion(question: Question): Question {
     },
     correctAnswer: question.correctAnswer || "",
     explanation: question.explanation || "",
-    status: question.status || "needs_review",
+    status: normalizeQuestionStatus(isReadyQuestion(question) ? "ready" : question.status),
+    confidence: typeof question.confidence === "number" ? question.confidence : isReadyQuestion(question) ? 0.92 : 0.45,
     extractionNote: question.extractionNote || ""
   };
 }
@@ -158,11 +163,14 @@ async function extractWithPdfParse(buffer: Buffer) {
 async function extractPdfTextLines(buffer: Buffer): Promise<ExtractedLine[]> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const { createCanvas } = await import("@napi-rs/canvas");
-  const document = await pdfjs.getDocument({
-    data: new Uint8Array(buffer),
-    isEvalSupported: false,
-    useSystemFonts: true
-  }).promise;
+  const document = await pdfjs.getDocument(
+    {
+      data: new Uint8Array(buffer),
+      disableWorker: true,
+      isEvalSupported: false,
+      useSystemFonts: true
+    } as unknown as Parameters<typeof pdfjs.getDocument>[0]
+  ).promise;
   const lines: ExtractedLine[] = [];
   const scale = 2;
 
@@ -312,11 +320,14 @@ function isYellowPixel(red: number, green: number, blue: number, alpha: number) 
 
 async function extractWithPdfJs(buffer: Buffer) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const document = await pdfjs.getDocument({
-    data: new Uint8Array(buffer),
-    isEvalSupported: false,
-    useSystemFonts: true
-  }).promise;
+  const document = await pdfjs.getDocument(
+    {
+      data: new Uint8Array(buffer),
+      disableWorker: true,
+      isEvalSupported: false,
+      useSystemFonts: true
+    } as unknown as Parameters<typeof pdfjs.getDocument>[0]
+  ).promise;
 
   const pages: string[] = [];
 
@@ -332,11 +343,14 @@ async function extractWithPdfJs(buffer: Buffer) {
 
 async function countPdfPages(buffer: Buffer) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
-  const document = await pdfjs.getDocument({
-    data: new Uint8Array(buffer),
-    isEvalSupported: false,
-    useSystemFonts: true
-  }).promise;
+  const document = await pdfjs.getDocument(
+    {
+      data: new Uint8Array(buffer),
+      disableWorker: true,
+      isEvalSupported: false,
+      useSystemFonts: true
+    } as unknown as Parameters<typeof pdfjs.getDocument>[0]
+  ).promise;
 
   return document.numPages;
 }
@@ -345,11 +359,14 @@ async function extractRenderedOcrText(buffer: Buffer) {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const { createCanvas } = await import("@napi-rs/canvas");
   const { createWorker } = await import("tesseract.js");
-  const document = await pdfjs.getDocument({
-    data: new Uint8Array(buffer),
-    isEvalSupported: false,
-    useSystemFonts: true
-  }).promise;
+  const document = await pdfjs.getDocument(
+    {
+      data: new Uint8Array(buffer),
+      disableWorker: true,
+      isEvalSupported: false,
+      useSystemFonts: true
+    } as unknown as Parameters<typeof pdfjs.getDocument>[0]
+  ).promise;
   const maxPages = Number(process.env.OCR_MAX_PAGES || 60);
   const pagesToScan = Math.min(document.numPages, maxPages);
   const scale = Number(process.env.OCR_RENDER_SCALE || 2);
@@ -426,7 +443,7 @@ async function extractCloudinaryOcrText(storagePath: string, cloudName: string |
 async function extractWithGoogleVision(storagePath: string, pdfId: string, bucketName?: string) {
   const bucket = getPdfBucket(bucketName);
   const resolvedBucketName = bucket.name;
-  const serviceAccountPath = process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH;
+  const serviceAccountPath = process.env.VERCEL ? undefined : process.env.FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH;
   if (!resolvedBucketName) throw new Error("OCR setup is incomplete: Firebase Storage bucket is missing.");
 
   const auth = new GoogleAuth({
@@ -538,7 +555,8 @@ function fallbackReviewQuestions(text: string, pdfId: string, userId: string): Q
     options: { A: "", B: "", C: "", D: "", E: "", F: "" },
     correctAnswer: "",
     explanation: "",
-    status: "needs_review",
+    status: "needsReview",
+    confidence: 0.25,
     extractionNote: "Could not confidently detect MCQ options. Review and complete manually."
   }));
 }
@@ -553,7 +571,8 @@ function sampleReviewQuestion(pdfId: string, userId: string, number: number): Qu
     options: { A: "", B: "", C: "", D: "", E: "", F: "" },
     correctAnswer: "",
     explanation: "Use the review screen to enter the question manually.",
-    status: "needs_review",
+    status: "needsReview",
+    confidence: 0.1,
     extractionNote: "No selectable text was found in this PDF."
   };
 }

@@ -51,6 +51,28 @@ service cloud.firestore {
       return isApproved() && request.resource.data.userId == request.auth.uid;
     }
 
+    function validLoginRequestCreate() {
+      return request.resource.data.keys().hasOnly([
+          "requestId",
+          "fullName",
+          "gmail",
+          "preferredPassword",
+          "requestedRole",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.requestId is string
+        && request.resource.data.fullName is string
+        && request.resource.data.gmail is string
+        && request.resource.data.preferredPassword is string
+        && request.resource.data.requestedRole == "user"
+        && request.resource.data.status == "pending"
+        && request.resource.data.createdAt is string
+        && request.resource.data.updatedAt is string
+        && request.resource.data.gmail.matches(".*@gmail[.]com");
+    }
+
     match /users/{userId} {
       allow read: if isAdmin()
         || (signedIn() && userId == request.auth.uid)
@@ -71,11 +93,20 @@ service cloud.firestore {
       allow create, update, delete: if isAdmin();
     }
 
+    match /loginRequests/{requestId} {
+      allow read, update, delete: if isAdmin();
+      allow create: if validLoginRequestCreate();
+    }
+
     match /pdfs/{pdfId} {
       allow read, delete: if isAdmin() || ownsUserData();
       allow create: if createsOwnUserData()
         && request.resource.data.fileName is string
-        && request.resource.data.storagePath.matches("users/" + request.auth.uid + "/pdfs/.*");
+        && (
+          request.resource.data.storagePath.matches("users/" + request.auth.uid + "/pdfs/.*")
+          || request.resource.data.storagePath.matches("cloudinary/.*")
+          || request.resource.data.storagePath.matches("local/users/" + request.auth.uid + "/pdfs/.*")
+        );
       allow update: if isAdmin() || ownsUserData();
     }
 

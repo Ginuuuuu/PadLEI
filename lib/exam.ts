@@ -1,10 +1,11 @@
 import type { ExamAnswer, ExamResult, ExamSettings, Question } from "@/types/models";
+import { isReadyQuestion } from "@/lib/question-options";
 import { shuffle } from "@/lib/utils";
 
 export function buildExamQuestions(questions: Question[], settings: ExamSettings) {
   const inRange = questions
     .filter((question) => question.questionNumber >= settings.fromQuestion && question.questionNumber <= settings.toQuestion)
-    .filter((question) => question.status === "ready");
+    .filter(isReadyQuestion);
 
   const ordered = settings.order === "random" ? shuffle(inRange) : inRange.sort((a, b) => a.questionNumber - b.questionNumber);
   return ordered.slice(0, settings.questionCount);

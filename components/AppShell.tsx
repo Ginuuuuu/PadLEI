@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname, useRouter } from "next/navigation";
-import { ArrowLeft, FileUp, GraduationCap, History, LayoutDashboard, LogOut, Settings, ShieldCheck } from "lucide-react";
+import { ArrowLeft, FileUp, GraduationCap, History, LayoutDashboard, LogOut, Settings, ShieldCheck, UserRoundPlus } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { useAuth } from "@/components/AuthProvider";
 import { cn } from "@/lib/utils";
@@ -19,7 +19,11 @@ export function AppShell({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const router = useRouter();
   const { appUser, logout } = useAuth();
-  const mobileNav = appUser?.role === "admin" ? [...nav, { href: "/admin", label: "Admin", icon: ShieldCheck }] : nav;
+  const adminNav = [
+    { href: "/admin", label: "Admin", icon: ShieldCheck },
+    { href: "/admin/login-requests", label: "Login Requests", icon: UserRoundPlus }
+  ];
+  const mobileNav = appUser?.role === "admin" ? [...nav, ...adminNav] : nav;
 
   return (
     <div className="min-h-screen">
@@ -37,7 +41,9 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           {nav.map((item) => (
             <NavItem key={item.href} item={item} active={pathname.startsWith(item.href)} />
           ))}
-          {appUser?.role === "admin" ? <NavItem item={{ href: "/admin", label: "Admin", icon: ShieldCheck }} active={pathname.startsWith("/admin")} /> : null}
+          {appUser?.role === "admin"
+            ? adminNav.map((item) => <NavItem key={item.href} item={item} active={item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)} />)
+            : null}
         </nav>
         <Button variant="ghost" className="absolute bottom-4 left-4 right-4 justify-start" onClick={logout}>
           <LogOut className="h-4 w-4" /> Sign out
@@ -59,7 +65,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
             {mobileNav.map((item) => (
-              <Link key={item.href} href={item.href} className={cn("rounded-lg px-3 py-2 text-sm font-semibold", pathname.startsWith(item.href) ? "bg-ink text-white" : "bg-white text-ink")}>
+              <Link key={item.href} href={item.href} className={cn("rounded-lg px-3 py-2 text-sm font-semibold", (item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)) ? "bg-ink text-white" : "bg-white text-ink")}>
                 {item.label}
               </Link>
             ))}

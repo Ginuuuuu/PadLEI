@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useState } from "react";
+import Link from "next/link";
 import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { Flag, Timer } from "lucide-react";
@@ -64,8 +65,11 @@ export function ExamRunner({ allQuestions, settings }: { allQuestions: Question[
   if (!question) {
     return (
       <Card className="text-sm text-slate-600">
-        <p>No ready questions matched this setup. Reprocess this PDF, or widen the question range.</p>
-        <ReprocessPdfButton className="mt-4" pdfId={settings.pdfId} />
+        <p>No ready questions matched this setup. Widen the question range, review pending questions, or reprocess this PDF.</p>
+        <div className="mt-4 flex flex-wrap gap-2">
+          <Button asChild><Link href={`/pdfs/${settings.pdfId}`}>Review questions</Link></Button>
+          <ReprocessPdfButton pdfId={settings.pdfId} />
+        </div>
       </Card>
     );
   }

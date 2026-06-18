@@ -5,6 +5,7 @@ import { collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc, writeBatch }
 import { Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { AppShell } from "@/components/AppShell";
+import { useAuth } from "@/components/AuthProvider";
 import { PageHeader } from "@/components/PageHeader";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Button } from "@/components/ui/button";
@@ -15,13 +16,20 @@ import { handleSnapshotError } from "@/lib/firestore-errors";
 import type { AppUser, UserApproval, UserRole } from "@/types/models";
 
 export default function AdminUsersPage() {
+  const { appUser } = useAuth();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [approvals, setApprovals] = useState<UserApproval[]>([]);
   const [temporaryPassword, setTemporaryPassword] = useState<{ email: string; password: string } | null>(null);
   const [busy, setBusy] = useState(false);
 
-  useEffect(() => onSnapshot(collection(db, "users"), (snapshot) => setUsers(snapshot.docs.map((item) => item.data() as AppUser)), (error) => handleSnapshotError(error, "users")), []);
-  useEffect(() => onSnapshot(collection(db, "approvals"), (snapshot) => setApprovals(snapshot.docs.map((item) => item.data() as UserApproval)), (error) => handleSnapshotError(error, "approvals")), []);
+  useEffect(() => {
+    if (appUser?.role !== "admin") return;
+    return onSnapshot(collection(db, "users"), (snapshot) => setUsers(snapshot.docs.map((item) => item.data() as AppUser)), (error) => handleSnapshotError(error, "users"));
+  }, [appUser]);
+  useEffect(() => {
+    if (appUser?.role !== "admin") return;
+    return onSnapshot(collection(db, "approvals"), (snapshot) => setApprovals(snapshot.docs.map((item) => item.data() as UserApproval)), (error) => handleSnapshotError(error, "approvals"));
+  }, [appUser]);
 
   async function add(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -56,14 +64,16 @@ export default function AdminUsersPage() {
   }
 
   async function updateRole(user: AppUser, role: UserRole) {
-    await updateDoc(doc(db, "users", user.uid), { role });
-    await setDoc(doc(db, "approvals", user.email), { email: user.email, role, approved: user.approved, createdAt: user.createdAt || new Date().toISOString() }, { merge: true });
+    const updatedAt = new Date().toISOString();
+    await updateDoc(doc(db, "users", user.uid), { role, updatedAt });
+    await setDoc(doc(db, "approvals", user.email), { email: user.email, role, approved: user.approved, createdAt: user.createdAt || updatedAt, updatedAt }, { merge: true });
   }
 
   async function toggleApproval(user: AppUser) {
     const approved = !user.approved;
-    await updateDoc(doc(db, "users", user.uid), { approved });
-    await setDoc(doc(db, "approvals", user.email), { email: user.email, role: user.role, approved, createdAt: user.createdAt || new Date().toISOString() }, { merge: true });
+    const updatedAt = new Date().toISOString();
+    await updateDoc(doc(db, "users", user.uid), { approved, updatedAt });
+    await setDoc(doc(db, "approvals", user.email), { email: user.email, role: user.role, approved, createdAt: user.createdAt || updatedAt, updatedAt }, { merge: true });
   }
 
   async function removeUser(user: AppUser) {

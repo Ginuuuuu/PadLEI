@@ -16,9 +16,14 @@ export default function AdminPage() {
         <AdminStats />
         <div className="mt-6 grid gap-4 sm:grid-cols-2">
           <Card>
+            <h2 className="font-bold">Login Requests</h2>
+            <p className="mt-2 text-sm text-slate-500">Review new users, set passwords, and approve as user or admin.</p>
+            <Button className="mt-4" asChild><Link href="/admin/login-requests">View requests</Link></Button>
+          </Card>
+          <Card>
             <h2 className="font-bold">Approved Users</h2>
             <p className="mt-2 text-sm text-slate-500">Add emails, remove users, and assign user/admin roles.</p>
-            <Button className="mt-4" asChild><Link href="/admin/users">Manage users</Link></Button>
+            <Button className="mt-4" variant="secondary" asChild><Link href="/admin/users">Manage users</Link></Button>
           </Card>
           <Card>
             <h2 className="font-bold">Files & Performance</h2>

@@ -1,6 +1,6 @@
 export type UserRole = "user" | "admin";
 export type PdfStatus = "uploaded" | "extracting" | "completed" | "failed";
-export type QuestionStatus = "ready" | "needs_review";
+export type QuestionStatus = "ready" | "needsReview" | "needs_review" | "failed";
 export type PdfStorageProvider = "cloudinary" | "firebase" | "local";
 export type OptionKey = "A" | "B" | "C" | "D" | "E" | "F";
 
@@ -11,6 +11,7 @@ export type AppUser = {
   role: UserRole;
   approved: boolean;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type UserApproval = {
@@ -18,6 +19,7 @@ export type UserApproval = {
   role: UserRole;
   approved: boolean;
   createdAt: string;
+  updatedAt?: string;
 };
 
 export type PdfFile = {
@@ -31,11 +33,14 @@ export type PdfFile = {
   uploadedAt: string;
   status: PdfStatus;
   totalQuestions: number;
+  readyQuestions?: number;
+  needsReviewQuestions?: number;
   errorMessage?: string;
 };
 
 export type Question = {
   id: string;
+  questionId?: string;
   pdfId: string;
   userId: string;
   questionNumber: number;
@@ -51,7 +56,21 @@ export type Question = {
   correctAnswer: OptionKey | "";
   explanation?: string;
   status: QuestionStatus;
+  confidence?: number;
   extractionNote?: string;
+};
+
+export type LoginRequestStatus = "pending" | "approved" | "rejected";
+
+export type LoginRequest = {
+  requestId: string;
+  fullName: string;
+  gmail: string;
+  preferredPassword: string;
+  requestedRole: "user";
+  status: LoginRequestStatus;
+  createdAt: string;
+  updatedAt: string;
 };
 
 export type ExamSettings = {

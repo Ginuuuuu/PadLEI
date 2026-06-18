@@ -2,6 +2,9 @@
 const nextConfig = {
   serverExternalPackages: ["@napi-rs/canvas", "pdfjs-dist"],
   experimental: {
+    cpus: 1,
+    workerThreads: false,
+    memoryBasedWorkersCount: false,
     webpackBuildWorker: false,
     parallelServerBuildTraces: false,
     parallelServerCompiles: false,
