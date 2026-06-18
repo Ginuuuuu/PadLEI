@@ -4,7 +4,7 @@ import { AuthProvider } from "@/components/AuthProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
-  title: "Study + Mock Test Platform",
+  title: "PadLEI",
   description: "A Firebase-powered study and mock test platform for approved users."
 };
 

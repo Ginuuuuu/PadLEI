@@ -93,7 +93,7 @@ export default function LoginPage() {
           <div className="mx-auto grid h-14 w-14 place-items-center rounded-lg bg-ink text-white">
             <GraduationCap className="h-7 w-7" />
           </div>
-          <h1 className="mt-4 text-2xl font-bold">Study + Mock Test Platform</h1>
+          <h1 className="mt-4 text-2xl font-bold">PadLEI</h1>
           <p className="mt-2 text-sm text-slate-600">Approved students can study PDFs, practice MCQs, and track exam progress.</p>
         </div>
         <Button className="mt-6 w-full" variant="secondary" disabled={googleBusy || emailBusy} onClick={google}>

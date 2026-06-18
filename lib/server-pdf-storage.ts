@@ -6,7 +6,7 @@ import { adminBucket, adminBucketNames, adminStorage } from "@/lib/firebase-admi
 
 const runtimeDataRoot =
   process.env.VERCEL || process.env.NODE_ENV === "production"
-    ? resolve(tmpdir(), "study-mock-test-platform")
+    ? resolve(tmpdir(), "padlei")
     : resolve(process.cwd(), "data");
 const localRoot = resolve(runtimeDataRoot, "local-pdfs");
 const cloudinaryCacheRoot = resolve(runtimeDataRoot, "cloudinary-cache");
@@ -19,7 +19,7 @@ function safeCloudinaryId(name: string) {
   return name.replace(/[^\w.\-()/]+/g, "_").replace(/^\/+|\/+$/g, "");
 }
 
-function cloudinaryConfig() {
+export function cloudinaryConfig() {
   const cloudName = process.env.CLOUDINARY_CLOUD_NAME?.trim();
   const apiKey = process.env.CLOUDINARY_API_KEY?.trim();
   const apiSecret = process.env.CLOUDINARY_API_SECRET?.trim();
@@ -28,7 +28,7 @@ function cloudinaryConfig() {
   return { cloudName, apiKey, apiSecret };
 }
 
-function signCloudinaryParams(params: Record<string, string | number | boolean>, apiSecret: string) {
+export function signCloudinaryParams(params: Record<string, string | number | boolean>, apiSecret: string) {
   const payload = Object.keys(params)
     .sort()
     .map((key) => `${key}=${params[key]}`)
@@ -53,6 +53,39 @@ function cloudinaryDeliveryUrl(publicId: string, cloudName?: string) {
   const resolvedCloudName = cloudName || process.env.CLOUDINARY_CLOUD_NAME?.trim();
   if (!resolvedCloudName) throw new Error("Cloudinary cloud name is missing.");
   return `https://res.cloudinary.com/${resolvedCloudName}/image/upload/${publicId}.pdf`;
+}
+
+export function createCloudinaryPdfUploadSignature({
+  userId,
+  pdfId,
+  fileName
+}: {
+  userId: string;
+  pdfId: string;
+  fileName: string;
+}) {
+  const cloudinary = cloudinaryConfig();
+  if (!cloudinary) return null;
+
+  const publicId = safeCloudinaryId(`study-pdfs/${userId}/${pdfId}-${fileName.replace(/\.pdf$/i, "")}`);
+  const timestamp = Math.round(Date.now() / 1000);
+  const params = {
+    overwrite: true,
+    public_id: publicId,
+    timestamp
+  };
+  const signature = signCloudinaryParams(params, cloudinary.apiSecret);
+
+  return {
+    apiKey: cloudinary.apiKey,
+    bucketName: cloudinary.cloudName,
+    cloudName: cloudinary.cloudName,
+    publicId,
+    signature,
+    storagePath: `cloudinary/image/${publicId}`,
+    timestamp,
+    uploadUrl: `https://api.cloudinary.com/v1_1/${cloudinary.cloudName}/image/upload`
+  };
 }
 
 function encodedCloudinaryPublicId(publicId: string) {

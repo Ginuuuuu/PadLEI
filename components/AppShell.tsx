@@ -33,7 +33,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
             <GraduationCap className="h-5 w-5" />
           </div>
           <div>
-            <p className="font-bold">Study Platform</p>
+            <p className="font-bold">PadLEI</p>
             <p className="text-xs text-slate-500">Developer: Ginu</p>
           </div>
         </Link>
@@ -57,7 +57,7 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <Button variant="ghost" className="h-9 w-9 px-0" onClick={() => router.back()} aria-label="Go back">
                 <ArrowLeft className="h-4 w-4" />
               </Button>
-              <Link href="/dashboard" className="font-bold">Study Platform</Link>
+              <Link href="/dashboard" className="font-bold">PadLEI</Link>
             </div>
             <Button variant="ghost" className="h-9 px-3" onClick={logout}>
               <LogOut className="h-4 w-4" />

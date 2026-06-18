@@ -1,4 +1,4 @@
-# Study + Mock Test Platform
+# PadLEI
 
 A production-ready Next.js + Firebase web app for approved students to upload MCQ PDFs, extract questions, study them, take mock tests, and track performance.
 
