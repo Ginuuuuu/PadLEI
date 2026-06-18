@@ -4,6 +4,7 @@ import { useState } from "react";
 import { FileUp } from "lucide-react";
 import toast from "react-hot-toast";
 import { auth } from "@/lib/firebase";
+import { parseMcqText, sanitizeText, type ParsedQuestion } from "@/lib/extraction";
 import { useAuth } from "@/components/AuthProvider";
 import { Card } from "@/components/ui/card";
 
@@ -40,6 +41,11 @@ type CloudinaryUpload = {
   error?: { message?: string };
 };
 
+type BrowserExtraction = {
+  questions: ParsedQuestion[];
+  source: string;
+};
+
 async function readPayload<T extends { error?: string }>(response: Response): Promise<T> {
   const text = await response.text();
   if (!text) return {} as T;
@@ -68,12 +74,23 @@ export function PdfUploader() {
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("Login required.");
 
+      setStage("extracting");
+      let browserExtraction: BrowserExtraction;
+      try {
+        browserExtraction = await extractQuestionsInBrowser(file);
+      } catch (error) {
+        browserExtraction = {
+          questions: [],
+          source: `browser PDF extraction unavailable: ${error instanceof Error ? error.message : "unknown error"}`
+        };
+      }
+
       setStage("uploading");
       const directUpload = await requestCloudinarySignature(file, token);
       if (directUpload) {
         const cloudinaryUpload = await uploadDirectlyToCloudinary(file, directUpload);
         setStage("extracting");
-        const uploaded = await completeCloudinaryUpload(file, token, directUpload, cloudinaryUpload.secure_url || "");
+        const uploaded = await completeCloudinaryUpload(file, token, directUpload, cloudinaryUpload.secure_url || "", browserExtraction);
         showUploadResult(uploaded);
         return;
       }
@@ -133,6 +150,31 @@ export function PdfUploader() {
   );
 }
 
+async function extractQuestionsInBrowser(file: File): Promise<BrowserExtraction> {
+  const pdfjsLib = await import("pdfjs-dist");
+  pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
+  const document = await pdfjsLib.getDocument({
+    data: new Uint8Array(await file.arrayBuffer()),
+    isEvalSupported: false,
+    useSystemFonts: true
+  }).promise;
+  const pages: string[] = [];
+  const maxPages = Math.min(document.numPages, 80);
+
+  for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
+    const page = await document.getPage(pageNumber);
+    const content = await page.getTextContent();
+    pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join("\n"));
+  }
+
+  const text = sanitizeText(pages.join("\n\n"));
+  const questions = text ? parseMcqText(text) : [];
+  return {
+    questions,
+    source: document.numPages > maxPages ? `browser PDF text extraction, first ${maxPages} pages` : "browser PDF text extraction"
+  };
+}
+
 async function requestCloudinarySignature(file: File, token: string) {
   const response = await fetch("/api/cloudinary/sign-pdf-upload", {
     method: "POST",
@@ -179,7 +221,7 @@ async function uploadDirectlyToCloudinary(file: File, signature: CloudinarySigna
   return payload;
 }
 
-async function completeCloudinaryUpload(file: File, token: string, signature: CloudinarySignature, fileUrl: string) {
+async function completeCloudinaryUpload(file: File, token: string, signature: CloudinarySignature, fileUrl: string, extraction: BrowserExtraction) {
   const response = await fetch("/api/cloudinary/complete-pdf-upload", {
     method: "POST",
     cache: "no-store",
@@ -192,7 +234,9 @@ async function completeCloudinaryUpload(file: File, token: string, signature: Cl
       fileName: file.name,
       fileUrl,
       storagePath: signature.storagePath,
-      bucketName: signature.bucketName
+      bucketName: signature.bucketName,
+      extractedQuestions: extraction.questions,
+      extractionSource: extraction.source
     })
   });
   const payload = await readPayload<UploadResult>(response);

@@ -102,6 +102,52 @@ export async function processPdfBuffer({
   }
 }
 
+export async function processClientExtractedQuestions({
+  pdfId,
+  userId,
+  questions,
+  source
+}: {
+  pdfId: string;
+  userId: string;
+  questions: ParsedQuestion[];
+  source: string;
+}) {
+  try {
+    await adminDb.collection("pdfs").doc(pdfId).set({ status: "extracting", errorMessage: "" }, { merge: true });
+    const extractedQuestions: Question[] = questions.length
+      ? questions.map((question) => ({
+          ...question,
+          id: crypto.randomUUID(),
+          questionId: question.questionId || crypto.randomUUID(),
+          pdfId,
+          userId,
+          extractionNote: question.extractionNote || `Detected from ${source}.`,
+          confidence: typeof question.confidence === "number" ? question.confidence : isReadyQuestion(question) ? 0.9 : 0.45
+        }))
+      : [sampleReviewQuestion(pdfId, userId, 1)];
+
+    await replaceQuestions(pdfId, extractedQuestions);
+    const { readyQuestions, needsReviewQuestions } = questionCounts(extractedQuestions);
+    await adminDb.collection("pdfs").doc(pdfId).set(
+      {
+        status: "completed",
+        totalQuestions: extractedQuestions.length,
+        readyQuestions,
+        needsReviewQuestions,
+        errorMessage: needsReviewQuestions ? `${needsReviewQuestions} questions need review before exam.` : ""
+      },
+      { merge: true }
+    );
+
+    return { totalQuestions: extractedQuestions.length, readyQuestions, needsReview: needsReviewQuestions };
+  } catch (error) {
+    const message = formatExtractionError(error);
+    await adminDb.collection("pdfs").doc(pdfId).set({ status: "failed", totalQuestions: 0, readyQuestions: 0, needsReviewQuestions: 0, errorMessage: message }, { merge: true });
+    throw new Error(message);
+  }
+}
+
 export function formatExtractionError(error: unknown) {
   const message = error instanceof Error ? error.message : "Extraction failed.";
   return message.length > 700 ? `${message.slice(0, 700)}...` : message;

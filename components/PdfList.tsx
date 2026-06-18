@@ -84,39 +84,35 @@ export function PdfList({ limit }: { limit?: number }) {
 
   return (
     <div>
-      <div className="hidden overflow-hidden rounded-lg border border-white/70 bg-white/85 shadow-soft md:block">
-        <div className="grid grid-cols-[minmax(18rem,1fr)_9rem_15rem_7rem_24rem] gap-4 bg-slate-50 px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">
-          <span>File</span>
-          <span>Uploaded</span>
-          <span>Questions</span>
-          <span>Status</span>
-          <span className="text-right">Actions</span>
-        </div>
-        <div className="divide-y divide-slate-100">
-          {items.map((pdf) => {
-            const counts = countsFor(pdf);
-            return (
-              <div key={pdf.pdfId} className="grid grid-cols-[minmax(18rem,1fr)_9rem_15rem_7rem_24rem] items-center gap-4 px-5 py-4">
-                <div className="min-w-0">
+      <div className="hidden gap-3 md:grid">
+        {items.map((pdf) => {
+          const counts = countsFor(pdf);
+          return (
+            <Card key={pdf.pdfId} className="p-0">
+              <div className="flex flex-col gap-4 p-5 xl:flex-row xl:items-center">
+                <div className="min-w-0 flex-1">
                   <div className="flex min-w-0 items-center gap-3">
-                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-berry/10 text-berry">
+                    <div className="grid h-12 w-12 shrink-0 place-items-center rounded-lg bg-berry/10 text-berry">
                       <FileText className="h-5 w-5" />
                     </div>
                     <div className="min-w-0">
                       <p className="truncate font-semibold text-ink" title={pdf.fileName}>{pdf.fileName}</p>
-                      <p className="mt-1 text-xs text-slate-500">{pdf.storageProvider || "cloud"} storage</p>
+                      <p className="mt-1 text-xs text-slate-500">{formatDate(pdf.uploadedAt)} · {pdf.storageProvider || "cloud"} storage</p>
                     </div>
                   </div>
                   <PdfMessage pdf={pdf} />
                 </div>
-                <p className="text-sm text-slate-600">{formatDate(pdf.uploadedAt)}</p>
-                <QuestionMetrics counts={counts} />
-                <StatusPill status={pdf.status} />
-                <ActionButtons counts={counts} pdf={pdf} onRemove={() => remove(pdf)} onReprocess={() => reprocess(pdf)} />
+                <div className="w-full xl:w-56">
+                  <QuestionMetrics counts={counts} />
+                </div>
+                <div className="flex flex-wrap items-center gap-2 xl:ml-auto xl:justify-end">
+                  <StatusPill status={pdf.status} />
+                  <ActionButtons counts={counts} pdf={pdf} onRemove={() => remove(pdf)} onReprocess={() => reprocess(pdf)} />
+                </div>
               </div>
-            );
-          })}
-        </div>
+            </Card>
+          );
+        })}
       </div>
       <div className="grid gap-4 md:hidden">
         {items.map((pdf) => {
@@ -179,7 +175,7 @@ function ActionButtons({
   onReprocess: () => void;
 }) {
   return (
-    <div className="flex items-center justify-end gap-2">
+    <div className="flex flex-wrap items-center gap-2">
       <Button className="h-10 px-3" variant="secondary" asChild>
         <Link href={`/pdfs/${pdf.pdfId}`}><ExternalLink className="h-4 w-4" /> Open</Link>
       </Button>

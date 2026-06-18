@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
-import { formatExtractionError, processStoredPdf } from "@/lib/server-pdf-extraction";
+import { formatExtractionError, processClientExtractedQuestions, processStoredPdf } from "@/lib/server-pdf-extraction";
+import type { ParsedQuestion } from "@/lib/extraction";
 import type { PdfFile } from "@/types/models";
 
 export const runtime = "nodejs";
@@ -24,6 +25,8 @@ export async function POST(request: Request) {
       fileUrl?: string;
       storagePath?: string;
       bucketName?: string;
+      extractedQuestions?: ParsedQuestion[];
+      extractionSource?: string;
     };
     const pdfId = body.pdfId?.trim() || "";
     const fileName = body.fileName?.trim() || "";
@@ -63,7 +66,16 @@ export async function POST(request: Request) {
     let extractionError = "";
 
     try {
-      extraction = await processStoredPdf({ pdfId, userId: decoded.uid, storagePath, bucketName, fileUrl });
+      if (Array.isArray(body.extractedQuestions)) {
+        extraction = await processClientExtractedQuestions({
+          pdfId,
+          userId: decoded.uid,
+          questions: body.extractedQuestions,
+          source: body.extractionSource || "browser PDF text extraction"
+        });
+      } else {
+        extraction = await processStoredPdf({ pdfId, userId: decoded.uid, storagePath, bucketName, fileUrl });
+      }
     } catch (error) {
       extractionError = formatExtractionError(error);
     }
