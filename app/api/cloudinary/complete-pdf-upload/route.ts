@@ -34,7 +34,7 @@ export async function POST(request: Request) {
     if (!pdfId || !fileName || !fileUrl || !storagePath || !bucketName) {
       return NextResponse.json({ error: "Upload metadata is incomplete." }, { status: 400 });
     }
-    if (!storagePath.startsWith(`cloudinary/image/study-pdfs/${decoded.uid}/${pdfId}-`)) {
+    if (!storagePath.startsWith(`cloudinary/raw/study-pdfs/${decoded.uid}/${pdfId}-`)) {
       return NextResponse.json({ error: "Upload metadata does not match this user." }, { status: 403 });
     }
     if (!fileUrl.startsWith(`https://res.cloudinary.com/${bucketName}/`)) {

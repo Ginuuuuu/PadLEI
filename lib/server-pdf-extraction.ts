@@ -2,7 +2,7 @@ import { GoogleAuth } from "google-auth-library";
 import { adminDb } from "@/lib/firebase-admin";
 import { parseMcqLines, parseMcqText, sanitizeText, type ExtractedLine, type ParsedQuestion } from "@/lib/extraction";
 import { isReadyQuestion, normalizeQuestionStatus, questionCounts } from "@/lib/question-options";
-import { cloudinaryPageImageUrl, getPdfBucket, isCloudinaryPdfPath, isLocalPdfPath, readPdfBuffer } from "@/lib/server-pdf-storage";
+import { cloudinaryPageImageUrl, getPdfBucket, isCloudinaryImagePdfPath, isLocalPdfPath, readPdfBuffer } from "@/lib/server-pdf-storage";
 import type { Question } from "@/types/models";
 
 export async function processStoredPdf({
@@ -47,7 +47,7 @@ export async function processPdfBuffer({
         text = await extractRenderedOcrText(buffer);
         extractionSource = "Local page render + OCR";
       } catch (ocrError) {
-        if (isCloudinaryPdfPath(storagePath)) {
+        if (isCloudinaryImagePdfPath(storagePath)) {
           text = await extractCloudinaryOcrText(storagePath, bucketName, buffer);
           extractionSource = "Cloudinary page images + OCR";
         } else if (isLocalPdfPath(storagePath)) {

@@ -41,6 +41,10 @@ export function isCloudinaryPdfPath(storagePath: string) {
   return storagePath.startsWith("cloudinary/");
 }
 
+export function isCloudinaryImagePdfPath(storagePath: string) {
+  return storagePath.startsWith("cloudinary/image/");
+}
+
 function cloudinaryResourceType(storagePath: string) {
   return storagePath.startsWith("cloudinary/raw/") ? "raw" : "image";
 }
@@ -49,10 +53,12 @@ function cloudinaryPublicId(storagePath: string) {
   return storagePath.replace(/^cloudinary\/(?:raw|image)\//, "").replace(/^cloudinary\//, "");
 }
 
-function cloudinaryDeliveryUrl(publicId: string, cloudName?: string) {
+function cloudinaryDeliveryUrl(storagePath: string, cloudName?: string) {
   const resolvedCloudName = cloudName || process.env.CLOUDINARY_CLOUD_NAME?.trim();
   if (!resolvedCloudName) throw new Error("Cloudinary cloud name is missing.");
-  return `https://res.cloudinary.com/${resolvedCloudName}/image/upload/${publicId}.pdf`;
+  const publicId = encodedCloudinaryPublicId(cloudinaryPublicId(storagePath));
+  const resourceType = cloudinaryResourceType(storagePath);
+  return `https://res.cloudinary.com/${resolvedCloudName}/${resourceType}/upload/${publicId}${resourceType === "image" ? ".pdf" : ""}`;
 }
 
 export function createCloudinaryPdfUploadSignature({
@@ -67,7 +73,7 @@ export function createCloudinaryPdfUploadSignature({
   const cloudinary = cloudinaryConfig();
   if (!cloudinary) return null;
 
-  const publicId = safeCloudinaryId(`study-pdfs/${userId}/${pdfId}-${fileName.replace(/\.pdf$/i, "")}`);
+  const publicId = safeCloudinaryId(`study-pdfs/${userId}/${pdfId}-${fileName.replace(/\.pdf$/i, "")}.pdf`);
   const timestamp = Math.round(Date.now() / 1000);
   const params = {
     overwrite: true,
@@ -82,9 +88,9 @@ export function createCloudinaryPdfUploadSignature({
     cloudName: cloudinary.cloudName,
     publicId,
     signature,
-    storagePath: `cloudinary/image/${publicId}`,
+    storagePath: `cloudinary/raw/${publicId}`,
     timestamp,
-    uploadUrl: `https://api.cloudinary.com/v1_1/${cloudinary.cloudName}/image/upload`
+    uploadUrl: `https://api.cloudinary.com/v1_1/${cloudinary.cloudName}/raw/upload`
   };
 }
 
@@ -106,7 +112,8 @@ function localFilePath(storagePath: string) {
 }
 
 function cloudinaryCachePath(storagePath: string) {
-  const relativePath = `${cloudinaryPublicId(storagePath)}.pdf`.split("/").map(safeName).join("/");
+  const publicId = cloudinaryPublicId(storagePath);
+  const relativePath = (publicId.toLowerCase().endsWith(".pdf") ? publicId : `${publicId}.pdf`).split("/").map(safeName).join("/");
   const target = resolve(cloudinaryCacheRoot, relativePath);
   if (!target.startsWith(cloudinaryCacheRoot)) throw new Error("Invalid Cloudinary cache path.");
   return target;
@@ -163,7 +170,7 @@ export async function savePdfBuffer({
   const cloudinary = cloudinaryConfig();
   if (cloudinary) {
     try {
-      const publicId = safeCloudinaryId(`study-pdfs/${userId}/${pdfId}-${fileName.replace(/\.pdf$/i, "")}`);
+      const publicId = safeCloudinaryId(`study-pdfs/${userId}/${pdfId}-${fileName.replace(/\.pdf$/i, "")}.pdf`);
       const timestamp = Math.round(Date.now() / 1000);
       const params = {
         overwrite: true,
@@ -181,7 +188,7 @@ export async function savePdfBuffer({
       form.append("overwrite", "true");
       form.append("signature", signature);
 
-      const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinary.cloudName}/image/upload`, {
+      const response = await fetch(`https://api.cloudinary.com/v1_1/${cloudinary.cloudName}/raw/upload`, {
         method: "POST",
         body: form
       });
@@ -191,7 +198,7 @@ export async function savePdfBuffer({
         throw new Error(`Cloudinary upload failed: ${payload.error?.message || response.statusText}`);
       }
 
-      const storagePath = `cloudinary/image/${publicId}`;
+      const storagePath = `cloudinary/raw/${publicId}`;
       await writeCloudinaryCache(storagePath, buffer);
 
       return {
@@ -254,13 +261,13 @@ export async function readPdfBuffer(storagePath: string, bucketName?: string, fi
   }
 
   if (isCloudinaryPdfPath(storagePath)) {
-    const response = await fetch(fileUrl || cloudinaryDeliveryUrl(cloudinaryPublicId(storagePath), bucketName));
+    const response = await fetch(fileUrl || cloudinaryDeliveryUrl(storagePath, bucketName));
     if (!response.ok) {
       try {
         return await readCloudinaryCache(storagePath);
       } catch {
         throw new Error(
-          `Cloudinary download failed: ${response.statusText}. Enable PDF delivery in Cloudinary Security settings, then delete and re-upload this PDF.`
+          `Cloudinary download failed: ${response.statusText}. Delete this PDF and re-upload it so PadLEI can store it through the fixed Cloudinary PDF path.`
         );
       }
     }

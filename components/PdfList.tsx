@@ -85,55 +85,38 @@ export function PdfList({ limit }: { limit?: number }) {
   return (
     <div>
       <div className="hidden overflow-hidden rounded-lg border border-white/70 bg-white/85 shadow-soft md:block">
-        <table className="w-full text-left text-sm">
-          <thead className="bg-slate-50 text-xs uppercase text-slate-500">
-            <tr>
-              <th className="px-4 py-3">File Name</th>
-              <th className="px-4 py-3">Upload Date</th>
-              <th className="px-4 py-3">Total</th>
-              <th className="px-4 py-3">Ready</th>
-              <th className="px-4 py-3">Needs Review</th>
-              <th className="px-4 py-3">Status</th>
-              <th className="px-4 py-3">Actions</th>
-            </tr>
-          </thead>
-          <tbody className="divide-y divide-slate-100">
-            {items.map((pdf) => {
-              const counts = countsFor(pdf);
-              return (
-                <tr key={pdf.pdfId}>
-                  <td className="max-w-[18rem] px-4 py-3">
-                    <div className="flex items-center gap-3">
-                      <div className="grid h-10 w-10 shrink-0 place-items-center rounded-lg bg-berry/10 text-berry">
-                        <FileText className="h-5 w-5" />
-                      </div>
-                      <span className="truncate font-semibold" title={pdf.fileName}>{pdf.fileName}</span>
+        <div className="grid grid-cols-[minmax(18rem,1fr)_9rem_15rem_7rem_24rem] gap-4 bg-slate-50 px-5 py-3 text-xs font-bold uppercase tracking-wide text-slate-500">
+          <span>File</span>
+          <span>Uploaded</span>
+          <span>Questions</span>
+          <span>Status</span>
+          <span className="text-right">Actions</span>
+        </div>
+        <div className="divide-y divide-slate-100">
+          {items.map((pdf) => {
+            const counts = countsFor(pdf);
+            return (
+              <div key={pdf.pdfId} className="grid grid-cols-[minmax(18rem,1fr)_9rem_15rem_7rem_24rem] items-center gap-4 px-5 py-4">
+                <div className="min-w-0">
+                  <div className="flex min-w-0 items-center gap-3">
+                    <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-berry/10 text-berry">
+                      <FileText className="h-5 w-5" />
                     </div>
-                    <PdfMessage pdf={pdf} />
-                  </td>
-                  <td className="px-4 py-3 text-slate-600">{formatDate(pdf.uploadedAt)}</td>
-                  <td className="px-4 py-3">{counts.total}</td>
-                  <td className="px-4 py-3 text-green-700">{counts.ready}</td>
-                  <td className="px-4 py-3 text-amber-700">{counts.review}</td>
-                  <td className="px-4 py-3"><StatusPill status={pdf.status} /></td>
-                  <td className="px-4 py-3">
-                    <div className="flex flex-wrap gap-2">
-                      <Button className="h-10 px-3" variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><ExternalLink className="h-4 w-4" /> Open</Link></Button>
-                      <Button className="h-10 px-3" asChild><Link href={`/study/${pdf.pdfId}`}><BookOpen className="h-4 w-4" /> Study</Link></Button>
-                      {counts.ready > 0 ? (
-                        <Button className="h-10 px-3" variant="secondary" asChild><Link href={`/exam/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Exam</Link></Button>
-                      ) : (
-                        <Button className="h-10 px-3" variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Review</Link></Button>
-                      )}
-                      <Button className="h-10 px-3" variant="secondary" onClick={() => reprocess(pdf)} aria-label="Retry extraction"><RotateCw className="h-4 w-4" /></Button>
-                      <Button className="h-10 px-3" variant="danger" onClick={() => remove(pdf)}><Trash2 className="h-4 w-4" /> Delete</Button>
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-ink" title={pdf.fileName}>{pdf.fileName}</p>
+                      <p className="mt-1 text-xs text-slate-500">{pdf.storageProvider || "cloud"} storage</p>
                     </div>
-                  </td>
-                </tr>
-              );
-            })}
-          </tbody>
-        </table>
+                  </div>
+                  <PdfMessage pdf={pdf} />
+                </div>
+                <p className="text-sm text-slate-600">{formatDate(pdf.uploadedAt)}</p>
+                <QuestionMetrics counts={counts} />
+                <StatusPill status={pdf.status} />
+                <ActionButtons counts={counts} pdf={pdf} onRemove={() => remove(pdf)} onReprocess={() => reprocess(pdf)} />
+              </div>
+            );
+          })}
+        </div>
       </div>
       <div className="grid gap-4 md:hidden">
         {items.map((pdf) => {
@@ -157,15 +140,7 @@ export function PdfList({ limit }: { limit?: number }) {
               </div>
               <PdfMessage pdf={pdf} />
               <div className="mt-5 grid grid-cols-2 gap-2">
-                <Button variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><ExternalLink className="h-4 w-4" /> Open</Link></Button>
-                <Button asChild><Link href={`/study/${pdf.pdfId}`}><BookOpen className="h-4 w-4" /> Study</Link></Button>
-                {counts.ready > 0 ? (
-                  <Button variant="secondary" asChild><Link href={`/exam/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Exam</Link></Button>
-                ) : (
-                  <Button variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Review</Link></Button>
-                )}
-                <Button variant="secondary" onClick={() => reprocess(pdf)}><RotateCw className="h-4 w-4" /> Retry</Button>
-                <Button className="col-span-2" variant="danger" onClick={() => remove(pdf)}><Trash2 className="h-4 w-4" /> Delete</Button>
+                <MobileActionButtons counts={counts} pdf={pdf} onRemove={() => remove(pdf)} onReprocess={() => reprocess(pdf)} />
               </div>
             </Card>
           );
@@ -180,6 +155,80 @@ function countsFor(pdf: PdfFile) {
   const review = pdf.needsReviewQuestions ?? 0;
   const ready = pdf.readyQuestions ?? Math.max(0, total - review);
   return { total, ready, review };
+}
+
+function QuestionMetrics({ counts }: { counts: ReturnType<typeof countsFor> }) {
+  return (
+    <div className="grid grid-cols-3 gap-2 text-center text-xs">
+      <Metric label="Total" value={counts.total} />
+      <Metric label="Ready" value={counts.ready} />
+      <Metric label="Review" value={counts.review} />
+    </div>
+  );
+}
+
+function ActionButtons({
+  counts,
+  pdf,
+  onRemove,
+  onReprocess
+}: {
+  counts: ReturnType<typeof countsFor>;
+  pdf: PdfFile;
+  onRemove: () => void;
+  onReprocess: () => void;
+}) {
+  return (
+    <div className="flex items-center justify-end gap-2">
+      <Button className="h-10 px-3" variant="secondary" asChild>
+        <Link href={`/pdfs/${pdf.pdfId}`}><ExternalLink className="h-4 w-4" /> Open</Link>
+      </Button>
+      <Button className="h-10 px-3" asChild>
+        <Link href={`/study/${pdf.pdfId}`}><BookOpen className="h-4 w-4" /> Study</Link>
+      </Button>
+      {counts.ready > 0 ? (
+        <Button className="h-10 px-3" variant="secondary" asChild>
+          <Link href={`/exam/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Exam</Link>
+        </Button>
+      ) : (
+        <Button className="h-10 px-3" variant="secondary" asChild>
+          <Link href={`/pdfs/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Review</Link>
+        </Button>
+      )}
+      <Button className="h-10 w-10 px-0" variant="secondary" onClick={onReprocess} aria-label="Retry extraction" title="Retry extraction">
+        <RotateCw className="h-4 w-4" />
+      </Button>
+      <Button className="h-10 w-10 px-0" variant="danger" onClick={onRemove} aria-label="Delete PDF" title="Delete PDF">
+        <Trash2 className="h-4 w-4" />
+      </Button>
+    </div>
+  );
+}
+
+function MobileActionButtons({
+  counts,
+  pdf,
+  onRemove,
+  onReprocess
+}: {
+  counts: ReturnType<typeof countsFor>;
+  pdf: PdfFile;
+  onRemove: () => void;
+  onReprocess: () => void;
+}) {
+  return (
+    <>
+      <Button variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><ExternalLink className="h-4 w-4" /> Open</Link></Button>
+      <Button asChild><Link href={`/study/${pdf.pdfId}`}><BookOpen className="h-4 w-4" /> Study</Link></Button>
+      {counts.ready > 0 ? (
+        <Button variant="secondary" asChild><Link href={`/exam/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Exam</Link></Button>
+      ) : (
+        <Button variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Review</Link></Button>
+      )}
+      <Button variant="secondary" onClick={onReprocess}><RotateCw className="h-4 w-4" /> Retry</Button>
+      <Button className="col-span-2" variant="danger" onClick={onRemove}><Trash2 className="h-4 w-4" /> Delete PDF</Button>
+    </>
+  );
 }
 
 function StatusPill({ status }: { status: PdfFile["status"] }) {
