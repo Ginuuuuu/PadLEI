@@ -9,15 +9,18 @@ export type ExtractedLine = {
 
 export type ParsedQuestion = Omit<Question, "id" | "pdfId" | "userId">;
 
+const tickPrefixPattern = String.raw`(?:[\u2713\u2714\u2705\u2611\u221a]\s*|\[\s*x\s*\]\s*|\(\s*x\s*\)\s*)?`;
+const cyrillicOptionChars = "\u0410\u0430\u0411\u0431\u0412\u0432\u0413\u0433\u0414\u0434\u0415\u0435";
+const answerValueClass = `A-F${cyrillicOptionChars}1-6`;
+const optionLetterClass = `A-F${cyrillicOptionChars}`;
+const optionMarkerPattern = String.raw`${tickPrefixPattern}(?:Hint\s*)?(?:\(?[${optionLetterClass}]\)?|[1-6])[\).:\-]\s*`;
+const optionPrefixPattern = String.raw`${tickPrefixPattern}(?:Hint\s*)?(?:\(?([${optionLetterClass}])\)?|([1-6]))[\).:\-]\s*`;
 const answerPatterns = [
-  /(?:answer|ans|correct)\s*[:\-.)]\s*([A-F1-6])/i,
-  /\(([A-F1-6])\)\s*(?:is\s*)?(?:correct|answer)/i,
-  /(?:correct\s*option|right\s*option)\s*[:\-.)]\s*([A-F1-6])/i,
+  new RegExp(String.raw`(?:answer|ans|correct)\s*[:\-.)]\s*([${answerValueClass}])`, "i"),
+  new RegExp(String.raw`\(([${answerValueClass}])\)\s*(?:is\s*)?(?:correct|answer)`, "i"),
+  new RegExp(String.raw`(?:correct\s*option|right\s*option)\s*[:\-.)]\s*([${answerValueClass}])`, "i"),
   /\b([A-F])\s*(?:is\s*)?(?:the\s*)?(?:correct|right)\s*(?:answer|option)?\b/i
 ];
-
-const tickPrefixPattern = String.raw`(?:[\u2713\u2714\u2705\u2611\u221a]\s*|\[\s*x\s*\]\s*|\(\s*x\s*\)\s*)?`;
-const optionPrefixPattern = String.raw`${tickPrefixPattern}(?:Hint\s*)?(?:\(?([A-F])\)?|([1-6]))[\).:\-]\s*`;
 
 export function sanitizeText(input: string) {
   return input
@@ -55,9 +58,9 @@ export function extractAnswerKey(rawText: string) {
   const text = sanitizeText(rawText);
   const answers = new Map<number, Question["correctAnswer"]>();
   const patterns = [
-    /(?:^|\s)(\d{1,4})\s*[\).:\-]\s*([A-F1-6])(?=\s*(?:$|[,;]))/gi,
-    /(?:Q\.?\s*)?(\d{1,4})\s*(?:answer|ans)\s*[:\-]\s*([A-F1-6])(?=\s|$|[,;])/gi,
-    /(?:answer|ans)\s*(?:for)?\s*(?:Q\.?\s*)?(\d{1,4})\s*[:\-]\s*([A-F1-6])(?=\s|$|[,;])/gi
+    new RegExp(String.raw`(?:^|\s)(\d{1,4})\s*[\).:\-]\s*([${answerValueClass}])(?=\s*(?:$|[,;]))`, "gi"),
+    new RegExp(String.raw`(?:Q\.?\s*)?(\d{1,4})\s*(?:answer|ans)\s*[:\-]\s*([${answerValueClass}])(?=\s|$|[,;])`, "gi"),
+    new RegExp(String.raw`(?:answer|ans)\s*(?:for)?\s*(?:Q\.?\s*)?(\d{1,4})\s*[:\-]\s*([${answerValueClass}])(?=\s|$|[,;])`, "gi")
   ];
 
   for (const pattern of patterns) {
@@ -176,7 +179,7 @@ function parseBlock(block: string, fallbackNumber: number, answerKey: Map<number
   const normalized = block.replace(/^(?:Q\.?\s*)?\d{1,4}\s*[\).:\-]\s*/i, "");
 
   const optionRegex = new RegExp(
-    String.raw`(?:^|\n|\r|(?<=\s))\s*${optionPrefixPattern}([\s\S]*?)(?=(?:\n|\r|(?<=\s))\s*${tickPrefixPattern}(?:Hint\s*)?(?:\(?[A-F]\)?|[1-6])[\).:\-]\s*|(?:\n|\r|(?<=\s))\s*(?:answer|ans|correct|right)\s*[:\-.)]|(?:\n|\r|(?<=\s))\s*explanation\s*[:\-]|\s*$)`,
+    String.raw`(?:^|\n|\r|(?<=\s))\s*${optionPrefixPattern}([\s\S]*?)(?=(?:\n|\r|(?<=\s))\s*${optionMarkerPattern}|(?:\n|\r|(?<=\s))\s*(?:answer|ans|correct|right)\s*[:\-.)]|(?:\n|\r|(?<=\s))\s*explanation\s*[:\-]|\s*$)`,
     "gi"
   );
   const options = emptyOptions();
@@ -192,7 +195,7 @@ function parseBlock(block: string, fallbackNumber: number, answerKey: Map<number
   }
 
   const firstOptionIndex = normalized.search(
-    new RegExp(String.raw`(?:^|\n|\r|(?<=\s))\s*${tickPrefixPattern}(?:Hint\s*)?(?:\(?A\)?|1)[\).:\-]\s*`, "i")
+    new RegExp(String.raw`(?:^|\n|\r|(?<=\s))\s*${tickPrefixPattern}(?:Hint\s*)?(?:\(?[AАа]\)?|1)[\).:\-]\s*`, "i")
   );
   const questionText = (firstOptionIndex >= 0 ? normalized.slice(0, firstOptionIndex) : normalized).trim();
   const answerMatch = answerPatterns.map((pattern) => normalized.match(pattern)).find(Boolean);
@@ -268,6 +271,15 @@ function cleanInlineMarkers(text: string) {
 function toAnswerLetter(value?: string): Question["correctAnswer"] {
   const normalized = value?.trim().toUpperCase();
   if (!normalized) return "";
+  const cyrillicOptions: Record<string, Question["correctAnswer"]> = {
+    "\u0410": "A",
+    "\u0411": "B",
+    "\u0412": "C",
+    "\u0413": "D",
+    "\u0414": "E",
+    "\u0415": "F"
+  };
+  if (cyrillicOptions[normalized]) return cyrillicOptions[normalized];
   const numericIndex = Number(normalized);
   if (Number.isInteger(numericIndex) && numericIndex >= 1 && numericIndex <= optionKeys.length) {
     return optionKeys[numericIndex - 1];

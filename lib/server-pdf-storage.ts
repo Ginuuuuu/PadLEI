@@ -45,6 +45,10 @@ export function isCloudinaryImagePdfPath(storagePath: string) {
   return storagePath.startsWith("cloudinary/image/");
 }
 
+export function isDefaultPdfPath(storagePath: string) {
+  return storagePath.startsWith("default-pdfs/");
+}
+
 function cloudinaryResourceType(storagePath: string) {
   return storagePath.startsWith("cloudinary/raw/") ? "raw" : "image";
 }
@@ -256,6 +260,10 @@ export async function savePdfBuffer({
 }
 
 export async function readPdfBuffer(storagePath: string, bucketName?: string, fileUrl?: string) {
+  if (isDefaultPdfPath(storagePath)) {
+    return readFile(resolve(process.cwd(), "public", storagePath));
+  }
+
   if (isLocalPdfPath(storagePath)) {
     return readFile(localFilePath(storagePath));
   }
@@ -279,6 +287,10 @@ export async function readPdfBuffer(storagePath: string, bucketName?: string, fi
 }
 
 export async function deletePdfFile(storagePath: string, bucketName?: string) {
+  if (isDefaultPdfPath(storagePath)) {
+    return;
+  }
+
   if (isLocalPdfPath(storagePath)) {
     await rm(localFilePath(storagePath), { force: true });
     return;

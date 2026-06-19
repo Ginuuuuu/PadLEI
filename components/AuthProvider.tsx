@@ -31,6 +31,7 @@ const bootstrapAdminEmail = process.env.NEXT_PUBLIC_BOOTSTRAP_ADMIN_EMAIL?.toLow
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
+  const [seededUserId, setSeededUserId] = useState("");
   const [loading, setLoading] = useState(true);
 
   useEffect(() => {
@@ -61,6 +62,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       }
     });
   }, []);
+
+  useEffect(() => {
+    if (!appUser || seededUserId === appUser.uid) return;
+    let cancelled = false;
+    seedDefaultPdfs().then((ok) => {
+      if (ok && !cancelled) setSeededUserId(appUser.uid);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [appUser, seededUserId]);
 
   async function assertApproved(user: User) {
     if (!user.email) throw new Error(denied);
@@ -186,6 +198,22 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
+}
+
+async function seedDefaultPdfs() {
+  try {
+    const token = await auth.currentUser?.getIdToken();
+    if (!token) return false;
+    const response = await fetch("/api/default-pdfs/seed", {
+      method: "POST",
+      cache: "no-store",
+      headers: { Authorization: `Bearer ${token}` }
+    });
+    return response.ok;
+  } catch {
+    // Default PDFs are helpful, but login should never fail because seeding was delayed.
+    return false;
+  }
 }
 
 function readableAuthError(error: unknown, fallback: string) {

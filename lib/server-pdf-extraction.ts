@@ -359,7 +359,7 @@ function detectYellowHighlight(group: PdfLineGroup, image: Uint8ClampedArray, wi
 
 function detectStyledAnswerMarker(group: PdfLineGroup) {
   const text = buildLineText(group.items);
-  if (!/^(?:[\u2713\u2714\u2705\u2611\u221a]\s*|\[\s*x\s*\]\s*|\(\s*x\s*\)\s*)?(?:Hint\s*)?(?:\(?[A-F]\)?|[1-6])[\).:\-]/i.test(text)) return false;
+  if (!/^(?:[\u2713\u2714\u2705\u2611\u221a]\s*|\[\s*x\s*\]\s*|\(\s*x\s*\)\s*)?(?:Hint\s*)?(?:\(?[A-F\u0410\u0430\u0411\u0431\u0412\u0432\u0413\u0433\u0414\u0434\u0415\u0435]\)?|[1-6])[\).:\-]/i.test(text)) return false;
   return group.items.some((item) => Math.abs(item.skew) > 0.5 || /italic|oblique/i.test(item.fontName || ""));
 }
 
