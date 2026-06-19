@@ -30,18 +30,18 @@ export function sanitizeText(input: string) {
 
 export function parseMcqText(rawText: string): ParsedQuestion[] {
   const text = sanitizeText(rawText);
-  const lineQuestions = parseMcqLines(text.split("\n").map((line) => ({ text: line })));
-  if (lineQuestions.some((question) => question.status === "ready")) return lineQuestions;
-
   const answerKey = extractAnswerKey(text);
+  const lineQuestions = applyAnswerKeyToQuestions(parseMcqLines(text.split("\n").map((line) => ({ text: line }))), answerKey);
+  if (hasUsableQuestionStructure(lineQuestions)) return lineQuestions;
+
   let blocks = text
-    .split(/\n(?=\s*(?:Q\.?\s*)?\d{1,4}[\).:\-]\s+)/gi)
+    .split(/\n(?=\s*(?:Q\.?\s*)?\d{1,4}\s*[\).:\-]\s*)/gi)
     .map((block) => block.trim())
     .filter(Boolean);
 
   if (blocks.length <= 1) {
     blocks = text
-      .split(/(?=\s*(?:Q\.?\s*)?\d{1,4}[\).:\-]\s+)/gi)
+      .split(/(?=\s*(?:Q\.?\s*)?\d{1,4}\s*[\).:\-]\s*)/gi)
       .map((block) => block.trim())
       .filter(Boolean);
   }
@@ -114,7 +114,7 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
       continue;
     }
 
-    const questionMatch = rawText.match(/^(\d{1,4})\.\s*(.+)/);
+    const questionMatch = rawText.match(/^(\d{1,4})\s*\.\s*(.+)/);
     const optionMatch = rawText.match(new RegExp(`^${optionPrefixPattern}(.+)`, "i"));
     const optionCount = current ? Object.values(current.options).filter(Boolean).length : 0;
     const optionKey = toAnswerLetter(optionMatch?.[1] || optionMatch?.[2]);
@@ -171,12 +171,12 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
 }
 
 function parseBlock(block: string, fallbackNumber: number, answerKey: Map<number, Question["correctAnswer"]>): ParsedQuestion | null {
-  const numberMatch = block.match(/^(?:Q\.?\s*)?(\d{1,4})[\).:\-]\s*/i);
+  const numberMatch = block.match(/^(?:Q\.?\s*)?(\d{1,4})\s*[\).:\-]\s*/i);
   const questionNumber = numberMatch ? Number(numberMatch[1]) : fallbackNumber;
-  const normalized = block.replace(/^(?:Q\.?\s*)?\d{1,4}[\).:\-]\s*/i, "");
+  const normalized = block.replace(/^(?:Q\.?\s*)?\d{1,4}\s*[\).:\-]\s*/i, "");
 
   const optionRegex = new RegExp(
-    String.raw`(?:^|\n|\r|(?<=\s))\s*${optionPrefixPattern}([\s\S]*?)(?=(?:\n|\r|(?<=\s))\s*${tickPrefixPattern}(?:Hint\s*)?(?:\(?[A-F]\)?|[1-6])[\).:\-]\s+|(?:\n|\r|(?<=\s))\s*(?:answer|ans|correct|right)\s*[:\-.)]|(?:\n|\r|(?<=\s))\s*explanation\s*[:\-]|\s*$)`,
+    String.raw`(?:^|\n|\r|(?<=\s))\s*${optionPrefixPattern}([\s\S]*?)(?=(?:\n|\r|(?<=\s))\s*${tickPrefixPattern}(?:Hint\s*)?(?:\(?[A-F]\)?|[1-6])[\).:\-]\s*|(?:\n|\r|(?<=\s))\s*(?:answer|ans|correct|right)\s*[:\-.)]|(?:\n|\r|(?<=\s))\s*explanation\s*[:\-]|\s*$)`,
     "gi"
   );
   const options = emptyOptions();
@@ -191,7 +191,9 @@ function parseBlock(block: string, fallbackNumber: number, answerKey: Map<number
     options[key] = cleanOptionMarker(optionText);
   }
 
-  const firstOptionIndex = normalized.search(/(?:^|\n|\r|\s)\s*(?:Hint\s*)?\(?A\)?[\).:\-]\s+/i);
+  const firstOptionIndex = normalized.search(
+    new RegExp(String.raw`(?:^|\n|\r|(?<=\s))\s*${tickPrefixPattern}(?:Hint\s*)?(?:\(?A\)?|1)[\).:\-]\s*`, "i")
+  );
   const questionText = (firstOptionIndex >= 0 ? normalized.slice(0, firstOptionIndex) : normalized).trim();
   const answerMatch = answerPatterns.map((pattern) => normalized.match(pattern)).find(Boolean);
   const correctAnswer = (toAnswerLetter(answerMatch?.[1]) || answerKey.get(questionNumber) || highlightedAnswer || "") as ParsedQuestion["correctAnswer"];
@@ -216,6 +218,31 @@ function parseBlock(block: string, fallbackNumber: number, answerKey: Map<number
   } satisfies ParsedQuestion;
 
   return { ...parsed, status: questionStatus(parsed) };
+}
+
+function applyAnswerKeyToQuestions(questions: ParsedQuestion[], answerKey: Map<number, Question["correctAnswer"]>) {
+  if (!answerKey.size) return questions;
+
+  return questions.map((question) => {
+    if (question.correctAnswer) return question;
+    const correctAnswer = answerKey.get(question.questionNumber);
+    if (!correctAnswer) return question;
+    const next = {
+      ...question,
+      correctAnswer,
+      extractionNote: "Answer detected from answer key."
+    };
+    return { ...next, status: questionStatus(next) };
+  });
+}
+
+function hasUsableQuestionStructure(questions: ParsedQuestion[]) {
+  if (!questions.length) return false;
+  const usable = questions.filter((question) => {
+    const optionCount = Object.values(question.options).filter((value) => value.trim()).length;
+    return question.questionText.trim() && optionCount >= 2;
+  }).length;
+  return usable >= Math.max(1, Math.ceil(questions.length * 0.65));
 }
 
 function emptyOptions() {

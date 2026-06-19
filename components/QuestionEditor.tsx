@@ -144,22 +144,22 @@ export function QuestionEditor({ pdfId }: { pdfId: string }) {
 
   return (
     <div className="space-y-4">
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <Card className="p-4 sm:p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="font-bold">{counts.needsReviewQuestions} questions need review</h2>
             <p className="mt-1 text-sm text-slate-500">
               Ready questions are already available in Study and Exam. Fix only uncertain questions here.
             </p>
           </div>
-          <div className="flex rounded-lg border border-slate-200 bg-white p-1">
+          <div className="grid grid-cols-2 rounded-lg border border-slate-200 bg-white p-1 sm:flex">
             <button className={`rounded-md px-3 py-2 text-sm font-semibold ${tab === "review" ? "bg-ink text-white" : "text-slate-600"}`} onClick={() => setTab("review")}>Needs Review</button>
             <button className={`rounded-md px-3 py-2 text-sm font-semibold ${tab === "all" ? "bg-ink text-white" : "text-slate-600"}`} onClick={() => setTab("all")}>All Questions</button>
           </div>
         </div>
       </Card>
-      <Card>
-        <div className="flex flex-wrap items-start justify-between gap-3">
+      <Card className="p-4 sm:p-5">
+        <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
           <div>
             <h2 className="font-bold">Manual Answer Key</h2>
             <p className="mt-1 text-sm text-slate-500">
@@ -169,44 +169,59 @@ export function QuestionEditor({ pdfId }: { pdfId: string }) {
           <span className="rounded-lg bg-amber-100 px-3 py-1 text-xs font-semibold text-amber-800">Review before exam</span>
         </div>
         <Textarea
-          className="mt-4"
+          className="mt-4 min-h-24"
           value={answerKeyText}
           onChange={(event) => setAnswerKeyText(event.target.value)}
           placeholder={"Paste answers like:\n1 A\n2 C\n3-D\n4: B"}
         />
-        <div className="mt-3 flex flex-wrap gap-2">
-          <Button onClick={applyAnswerKey}>Apply answers</Button>
-          <Button variant="secondary" onClick={addQuestion}>Add question manually</Button>
+        <div className="mt-3 grid gap-2 sm:flex sm:flex-wrap">
+          <Button className="w-full sm:w-auto" onClick={applyAnswerKey}>Apply answers</Button>
+          <Button className="w-full sm:w-auto" variant="secondary" onClick={addQuestion}>Add question manually</Button>
         </div>
       </Card>
       <div className="space-y-4">
-        {visibleQuestions.map((question, index) => (
-          <Card key={question.id} className={isNeedsReviewStatus(question.status) ? "border-amber-300" : ""}>
-            <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-              <Input className="max-w-28" type="number" value={question.questionNumber} onChange={(event) => updateLocal(question.id, { questionNumber: Number(event.target.value) })} />
-              <div className="flex flex-wrap items-center gap-2">
+        {visibleQuestions.map((question) => (
+          <Card key={question.id} className={`p-4 sm:p-5 ${isNeedsReviewStatus(question.status) ? "border-amber-300" : ""}`}>
+            <div className="mb-4 flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+              <label className="flex items-center gap-2 text-sm font-semibold text-slate-600">
+                <span>Question</span>
+                <Input className="h-10 w-24" type="number" value={question.questionNumber} onChange={(event) => updateLocal(question.id, { questionNumber: Number(event.target.value) })} />
+              </label>
+              <div className="flex flex-wrap items-center gap-2 sm:justify-end">
                 <span className="rounded-lg bg-slate-100 px-3 py-1 text-xs">{question.status}</span>
                 <span className="rounded-lg bg-slate-100 px-3 py-1 text-xs">{Math.round((question.confidence || 0) * 100)}% confidence</span>
               </div>
             </div>
             {question.extractionNote ? <p className="mb-3 rounded-lg bg-slate-50 px-3 py-2 text-xs text-slate-600">{question.extractionNote}</p> : null}
-            <Textarea value={question.questionText} onChange={(event) => updateLocal(question.id, { questionText: event.target.value })} />
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
+            <label className="block space-y-2 text-sm font-semibold text-slate-600">
+              <span>Question text</span>
+              <Textarea className="min-h-24" value={question.questionText} onChange={(event) => updateLocal(question.id, { questionText: event.target.value })} />
+            </label>
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
               {optionKeys.map((key) => (
-                <Input key={key} value={question.options[key] || ""} placeholder={`Option ${key}`} onChange={(event) => updateLocal(question.id, { options: { ...question.options, [key]: event.target.value } })} />
+                <label key={key} className="block space-y-2 text-sm font-semibold text-slate-600">
+                  <span>Option {key}</span>
+                  <Input value={question.options[key] || ""} placeholder={`Option ${key}`} onChange={(event) => updateLocal(question.id, { options: { ...question.options, [key]: event.target.value } })} />
+                </label>
               ))}
             </div>
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              <Select value={question.correctAnswer} onChange={(event) => updateLocal(question.id, { correctAnswer: event.target.value as Question["correctAnswer"] })}>
-                <option value="">Correct answer</option>
-                {optionKeys.map((key) => <option key={key} value={key}>{key}</option>)}
-              </Select>
-              <Input value={question.explanation || ""} placeholder="Explanation" onChange={(event) => updateLocal(question.id, { explanation: event.target.value })} />
+            <div className="mt-4 grid gap-3 md:grid-cols-2">
+              <label className="block space-y-2 text-sm font-semibold text-slate-600">
+                <span>Correct answer</span>
+                <Select value={question.correctAnswer} onChange={(event) => updateLocal(question.id, { correctAnswer: event.target.value as Question["correctAnswer"] })}>
+                  <option value="">Select answer</option>
+                  {optionKeys.map((key) => <option key={key} value={key}>{key}</option>)}
+                </Select>
+              </label>
+              <label className="block space-y-2 text-sm font-semibold text-slate-600">
+                <span>Explanation</span>
+                <Input value={question.explanation || ""} placeholder="Optional explanation" onChange={(event) => updateLocal(question.id, { explanation: event.target.value })} />
+              </label>
             </div>
-            <div className="mt-4 flex flex-wrap gap-2">
-              <Button onClick={() => save(question)}>Save Question</Button>
-              <Button variant="secondary" onClick={() => markReady(question)}><CheckCircle2 className="h-4 w-4" /> Mark as Ready</Button>
-              <Button variant="danger" onClick={() => deleteQuestion(question)}><Trash2 className="h-4 w-4" /> Delete Question</Button>
+            <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
+              <Button className="w-full sm:w-auto" onClick={() => save(question)}>Save Question</Button>
+              <Button className="w-full sm:w-auto" variant="secondary" onClick={() => markReady(question)}><CheckCircle2 className="h-4 w-4" /> Mark as Ready</Button>
+              <Button className="w-full sm:w-auto" variant="danger" onClick={() => deleteQuestion(question)}><Trash2 className="h-4 w-4" /> Delete Question</Button>
             </div>
           </Card>
         ))}

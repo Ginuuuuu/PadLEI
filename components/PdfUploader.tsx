@@ -4,7 +4,7 @@ import { useState } from "react";
 import { FileUp } from "lucide-react";
 import toast from "react-hot-toast";
 import { auth } from "@/lib/firebase";
-import { parseMcqText, sanitizeText, type ParsedQuestion } from "@/lib/extraction";
+import { parseMcqLines, parseMcqText, sanitizeText, type ExtractedLine, type ParsedQuestion } from "@/lib/extraction";
 import { useAuth } from "@/components/AuthProvider";
 import { Card } from "@/components/ui/card";
 
@@ -44,6 +44,25 @@ type CloudinaryUpload = {
 type BrowserExtraction = {
   questions: ParsedQuestion[];
   source: string;
+};
+
+type BrowserPdfTextItem = {
+  str: string;
+  width?: number;
+  height?: number;
+  transform: number[];
+  fontName?: string;
+};
+
+type BrowserLineGroup = {
+  y: number;
+  items: Array<{
+    text: string;
+    x0: number;
+    x1: number;
+    skew: number;
+    fontName?: string;
+  }>;
 };
 
 async function readPayload<T extends { error?: string }>(response: Response): Promise<T> {
@@ -158,21 +177,109 @@ async function extractQuestionsInBrowser(file: File): Promise<BrowserExtraction>
     isEvalSupported: false,
     useSystemFonts: true
   }).promise;
-  const pages: string[] = [];
+  const lines: ExtractedLine[] = [];
   const maxPages = Math.min(document.numPages, 80);
 
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
     const page = await document.getPage(pageNumber);
     const content = await page.getTextContent();
-    pages.push(content.items.map((item) => ("str" in item ? item.str : "")).join("\n"));
+    const textItems = content.items.filter(isBrowserPdfTextItem) as BrowserPdfTextItem[];
+    const viewport = page.getViewport({ scale: 1 });
+    const groupedLines = groupBrowserTextItems(textItems, viewport);
+
+    for (const group of groupedLines) {
+      const text = buildBrowserLineText(group.items);
+      if (!text) continue;
+      lines.push({
+        text,
+        styled: detectBrowserStyledAnswer(group)
+      });
+    }
   }
 
-  const text = sanitizeText(pages.join("\n\n"));
-  const questions = text ? parseMcqText(text) : [];
+  const text = sanitizeText(lines.map((line) => line.text).join("\n"));
+  const lineQuestions = lines.length ? parseMcqLines(lines) : [];
+  const fallbackQuestions = text ? parseMcqText(text) : [];
+  const questions = extractionScore(lineQuestions) >= extractionScore(fallbackQuestions) ? lineQuestions : fallbackQuestions;
+
   return {
     questions,
-    source: document.numPages > maxPages ? `browser PDF text extraction, first ${maxPages} pages` : "browser PDF text extraction"
+    source: document.numPages > maxPages ? `browser PDF line extraction, first ${maxPages} pages` : "browser PDF line extraction"
   };
+}
+
+function isBrowserPdfTextItem(item: unknown): item is BrowserPdfTextItem {
+  return (
+    typeof item === "object" &&
+    item !== null &&
+    "str" in item &&
+    typeof (item as { str?: unknown }).str === "string" &&
+    Boolean((item as { str: string }).str.trim()) &&
+    Array.isArray((item as { transform?: unknown }).transform)
+  );
+}
+
+function groupBrowserTextItems(
+  items: BrowserPdfTextItem[],
+  viewport: { convertToViewportPoint: (x: number, y: number) => number[] }
+) {
+  const groups: BrowserLineGroup[] = [];
+
+  for (const item of items) {
+    const text = item.str.trim();
+    if (!text) continue;
+    const pdfX = item.transform[4];
+    const pdfY = item.transform[5];
+    let group = groups.find((candidate) => Math.abs(candidate.y - pdfY) < 3);
+    if (!group) {
+      group = { y: pdfY, items: [] };
+      groups.push(group);
+    }
+
+    const [x] = viewport.convertToViewportPoint(pdfX, pdfY);
+    const width = item.width || Math.max(text.length * (item.height || 10) * 0.45, 8);
+    group.items.push({
+      text,
+      x0: x,
+      x1: x + width,
+      skew: item.transform[2] || 0,
+      fontName: item.fontName
+    });
+  }
+
+  return groups.sort((a, b) => b.y - a.y).map((group) => ({ ...group, items: group.items.sort((a, b) => a.x0 - b.x0) }));
+}
+
+function buildBrowserLineText(items: BrowserLineGroup["items"]) {
+  let text = "";
+  let previousX = 0;
+
+  for (const item of items) {
+    const gap = item.x0 - previousX;
+    if (text && gap > 5 && !text.endsWith(" ") && !item.text.startsWith(" ")) text += " ";
+    text += item.text;
+    previousX = item.x1;
+  }
+
+  return text.replace(/\s+/g, " ").trim();
+}
+
+function detectBrowserStyledAnswer(group: BrowserLineGroup) {
+  const text = buildBrowserLineText(group.items);
+  if (!/^(?:[\u2713\u2714\u2705\u2611\u221a]\s*|\[\s*x\s*\]\s*|\(\s*x\s*\)\s*)?(?:Hint\s*)?(?:\(?[A-F]\)?|[1-6])[\).:\-]/i.test(text)) return false;
+  return group.items.some((item) => Math.abs(item.skew) > 0.5 || /italic|oblique/i.test(item.fontName || ""));
+}
+
+function usableQuestionCount(questions: ParsedQuestion[]) {
+  return questions.filter((question) => {
+    const optionCount = Object.values(question.options || {}).filter((value) => value?.trim()).length;
+    return question.questionText?.trim() && optionCount >= 2;
+  }).length;
+}
+
+function extractionScore(questions: ParsedQuestion[]) {
+  const readyCount = questions.filter((question) => question.status === "ready").length;
+  return usableQuestionCount(questions) * 4 + readyCount * 2;
 }
 
 async function requestCloudinarySignature(file: File, token: string) {

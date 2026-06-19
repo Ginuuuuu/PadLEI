@@ -116,15 +116,18 @@ export async function processClientExtractedQuestions({
   try {
     await adminDb.collection("pdfs").doc(pdfId).set({ status: "extracting", errorMessage: "" }, { merge: true });
     const extractedQuestions: Question[] = questions.length
-      ? questions.map((question) => ({
-          ...question,
-          id: crypto.randomUUID(),
-          questionId: question.questionId || crypto.randomUUID(),
-          pdfId,
-          userId,
-          extractionNote: question.extractionNote || `Detected from ${source}.`,
-          confidence: typeof question.confidence === "number" ? question.confidence : isReadyQuestion(question) ? 0.9 : 0.45
-        }))
+      ? questions.map((question) => {
+          const id = crypto.randomUUID();
+          return {
+            ...question,
+            id,
+            questionId: question.questionId || id,
+            pdfId,
+            userId,
+            extractionNote: question.extractionNote || `Detected from ${source}.`,
+            confidence: typeof question.confidence === "number" ? question.confidence : isReadyQuestion(question) ? 0.9 : 0.45
+          };
+        })
       : [sampleReviewQuestion(pdfId, userId, 1)];
 
     await replaceQuestions(pdfId, extractedQuestions);

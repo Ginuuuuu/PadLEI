@@ -65,13 +65,14 @@ export function AppShell({ children }: { children: React.ReactNode }) {
           </div>
           <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
             {mobileNav.map((item) => (
-              <Link key={item.href} href={item.href} className={cn("rounded-lg px-3 py-2 text-sm font-semibold", (item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)) ? "bg-ink text-white" : "bg-white text-ink")}>
-                {item.label}
+              <Link key={item.href} href={item.href} className={cn("inline-flex min-w-fit items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold", (item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)) ? "bg-ink text-white" : "bg-white text-ink")}>
+                <item.icon className="h-4 w-4" />
+                <span>{item.label}</span>
               </Link>
             ))}
           </div>
         </header>
-        <main className="mx-auto max-w-7xl px-4 py-6 sm:px-6 lg:px-8">
+        <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 lg:px-8">
           <Button variant="ghost" className="mb-4 hidden h-9 px-2 lg:inline-flex" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
