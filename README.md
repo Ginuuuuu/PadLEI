@@ -1,206 +1,206 @@
-# PadLEI
+# 📚 PadLEI — Smart AVN Study & Mock Test Platform
 
-A production-ready Next.js + Firebase web app for approved students to upload MCQ PDFs, extract questions, study them, take mock tests, and track performance.
+PadLEI is a modern AI-powered academic preparation platform designed to help medical students efficiently study and revise large MCQ question banks for AVN (Semester Examinations).
 
-## Features
+The platform allows students to upload PDF question banks containing hundreds of MCQs, automatically extracts questions and answers using OCR technology, generates a structured study environment, conducts mock tests, tracks progress, and highlights extraction issues for manual correction.
 
-- Login-only access with Google and email/password.
-- Admin-approved users only, with role-based admin/user protection.
-- Public login access request modal with admin approval and Firebase Auth user creation.
-- Firebase Authentication and Firestore for accounts/data.
-- Cloudinary PDF storage with local fallback for development.
-- PDF upload with server processing, permanent per-user metadata, and delete flow.
-- MCQ extraction API using PDF text parsing and local rendered-page OCR for scanned PDFs.
-- Question review/edit screen that keeps `needsReview` questions separate from ready study/exam questions.
-- Study mode with answer reveal, search, bookmarks, learned state, and progress.
-- Exam setup with PDF, question range, count, random/sequential order, timer, marks, and optional negative marks.
-- Exam runner with palette, marked review, auto-submit timer, and confirmation.
-- Result page with score, percentage, grade, answer review, explanations, retake, print/download.
-- Exam history and admin stats/files/performance pages.
-- Responsive Tailwind UI ready for Vercel.
+Originally developed for a medical student studying at Osh State University, Kyrgyzstan, PadLEI has since become a collaborative study platform used by multiple students preparing for AVN examinations.
 
-## Setup
+---
 
-1. Install dependencies:
+## 🚀 Live Demo
 
-   ```bash
-   npm install
-   ```
+Website: https://avn-study.vercel.app/
 
-2. Copy `.env.example` to `.env.local` and fill your Firebase web config.
+GitHub Repository: https://github.com/Ginuuuuu/PadLEI
 
-3. Create Firebase Authentication providers:
-   - Google
-   - Email/password
+---
 
-4. First admin access:
+# 🎯 Problem Statement
 
-   The email in `NEXT_PUBLIC_BOOTSTRAP_ADMIN_EMAIL` can create its admin profile automatically on first login. For this project, that is `reshin0026@gmail.com`.
+Medical students often receive large PDF question banks containing:
 
-   If you prefer manual setup, create the first admin user in Firestore:
+* 700–1000+ MCQs per subject
+* Multiple subjects per semester
+* Poorly formatted PDFs
+* Difficult revision workflow
+* No efficient progress tracking
 
-   Collection: `users`
+Studying directly from PDFs becomes time-consuming and ineffective.
 
-   Document id: the Firebase Auth UID of the admin
+PadLEI transforms static PDFs into an interactive learning platform.
 
-   ```json
-   {
-     "uid": "AUTH_UID",
-     "email": "admin@example.com",
-     "name": "Admin",
-     "role": "admin",
-     "approved": true,
-     "createdAt": "2026-06-18T00:00:00.000Z"
-   }
-   ```
+---
 
-5. Add Cloudinary free storage:
+# ✨ Key Features
 
-   Create a free Cloudinary account, then copy these from Cloudinary Dashboard > Programmable Media > API keys:
+## 📄 Smart PDF Upload
 
-   ```bash
-   CLOUDINARY_CLOUD_NAME=
-   CLOUDINARY_API_KEY=
-   CLOUDINARY_API_SECRET=
-   ```
+* Upload MCQ PDFs directly
+* OCR-based question extraction
+* Automatic question-answer parsing
+* Subject-wise organization
 
-   The app uses Cloudinary for PDF storage, so Firebase Storage billing is not required. If these keys are missing locally, the app saves PDFs under `data/local-pdfs`.
+---
 
-6. Deploy Firestore rules:
+## 📚 Interactive Study Mode
 
-   ```bash
-   firebase deploy --only firestore:rules
-   ```
+* Clean study interface
+* Question-by-question learning
+* Answer visibility controls
+* Comfortable revision experience
+* Mobile and desktop responsive
 
-   Admin user creation note: the app admin panel and login-request approval flow can create Firebase Authentication users automatically only when `FIREBASE_ADMIN_PROJECT_ID`, `FIREBASE_ADMIN_CLIENT_EMAIL`, and `FIREBASE_ADMIN_PRIVATE_KEY` are set in `.env.local` or Vercel.
+---
 
-7. Run locally:
+## 📝 Mock Test Engine
 
-   ```bash
-   npm run dev
-   ```
+* Timed examinations
+* Randomized question generation
+* Real exam simulation
+* Instant result generation
+* Detailed score analysis
 
-   Open `http://localhost:3001`.
+---
 
-   If Firebase shows `auth/unauthorized-domain`, add `localhost` and `127.0.0.1` in Firebase Console > Authentication > Settings > Authorized domains.
+## 📊 Progress Tracking
 
-## Vercel Deployment
+Track:
 
-1. Push the project to GitHub, GitLab, or Bitbucket.
+* Questions Studied
+* Questions Remaining
+* Mock Test Scores
+* Accuracy Percentage
+* Improvement Trends
+* Learning Progress
 
-   Do not commit `.env.local` or Firebase service-account JSON files. This repo ignores `*-firebase-adminsdk-*.json`, but check your Git changes before pushing.
+---
 
-2. In Vercel, create a new project and import the repository.
+## ⚠️ Extraction Validation System
 
-   Keep the defaults:
+OCR is powerful but not perfect.
 
-   ```text
-   Framework Preset: Next.js
-   Install Command: npm install
-   Build Command: npm run build
-   Output Directory: Next.js default
-   ```
+PadLEI automatically detects:
 
-3. Add these Vercel Environment Variables for Production, Preview, and Development:
+* Unrecognized questions
+* Incomplete extractions
+* Parsing failures
 
-   ```bash
-   NEXT_PUBLIC_FIREBASE_API_KEY=
-   NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
-   NEXT_PUBLIC_FIREBASE_PROJECT_ID=
-   NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
-   NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
-   NEXT_PUBLIC_FIREBASE_APP_ID=
-   NEXT_PUBLIC_BOOTSTRAP_ADMIN_EMAIL=reshin0026@gmail.com
+The system then:
 
-   CLOUDINARY_CLOUD_NAME=
-   CLOUDINARY_API_KEY=
-   CLOUDINARY_API_SECRET=
-   OCR_MAX_PAGES=60
+* Displays extraction statistics
+* Shows problematic entries
+* Allows manual correction
+* Enables users to add missing questions
 
-   FIREBASE_ADMIN_PROJECT_ID=
-   FIREBASE_ADMIN_CLIENT_EMAIL=
-   FIREBASE_ADMIN_PRIVATE_KEY=
-   ```
+---
 
-   Do not use `FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH` on Vercel. That variable is only for a local JSON file and will cause `ENOENT: no such file or directory` during deployment if Vercel tries to open it. Paste the private key into `FIREBASE_ADMIN_PRIVATE_KEY`; if Vercel stores it with escaped line breaks, the app converts `\n` back to real newlines.
+## ✍️ Manual Question Management
 
-4. In Firebase Console, add the deployed Vercel domain:
+Users can:
 
-   Authentication > Settings > Authorized domains > Add domain
+* Add questions manually
+* Edit extracted questions
+* Correct OCR mistakes
+* Update answers
+* Improve study quality
 
-   Add:
+---
 
-   ```text
-   your-project.vercel.app
-   ```
+## 🔐 Authentication System
 
-   Add your custom domain too if you connect one later.
+* Secure Login
+* User Accounts
+* Personalized Study Data
+* Individual Progress Tracking
 
-5. Deploy Firestore rules from this project:
+---
 
-   ```bash
-   firebase deploy --only firestore:rules
-   ```
+## 🛠️ Admin Dashboard
 
-6. Deploy on Vercel.
+Administrative features include:
 
-7. Test production in this order:
-   - Login with the bootstrap admin email.
-   - Add/approve one user in Admin.
-   - Upload the sample PDF.
-   - Open Study and Mock Test.
-   - If an older PDF card still shows review errors, click the reprocess button on that card.
+* User Management
+* Question Monitoring
+* Study Analytics
+* Content Moderation
+* Platform Maintenance
 
-OCR note: text-based PDFs process fastest. Scanned/image-only PDFs use local page rendering plus Tesseract OCR, so very large PDFs can hit Vercel function time limits. Keep `OCR_MAX_PAGES` lower for large scanned PDFs or use a Vercel plan with longer function duration.
+---
 
-## PDF Extraction Notes
+# 🏗️ System Workflow
 
-The API route at `app/api/extract-pdf/route.ts` parses selectable PDF text and detects common MCQ patterns:
+1. User uploads MCQ PDF
+2. OCR processes document
+3. Questions & answers are extracted
+4. Extraction quality is validated
+5. User reviews flagged questions
+6. Questions are stored in Firebase
+7. Student studies through Study Mode
+8. Student attends Mock Tests
+9. Results are analyzed
+10. Progress dashboard updates automatically
 
-```text
-1. Question text
-A. Option
-B. Option
-C. Option
-D. Option
-Answer: B
-Explanation: Optional explanation
-```
+---
 
-Text-based PDFs are parsed directly. For scanned PDFs, the app renders PDF pages locally and runs `tesseract.js` OCR. `OCR_MAX_PAGES` controls the maximum scanned pages per PDF, defaulting to 60.
+# 💻 Tech Stack
 
-## Review Workflow
+## Frontend
 
-- Extracted questions with reliable text, options, and an answer are saved as `status: "ready"`.
-- Uncertain questions are saved as `status: "needsReview"` with a `confidence` score.
-- Study and Exam only use ready questions.
-- Open a PDF, use the Needs Review tab, fix text/options/answer/explanation, then click `Mark as Ready`.
-- The PDF card updates `totalQuestions`, `readyQuestions`, and `needsReviewQuestions` after edits.
+![Next.js](https://img.shields.io/badge/NEXT.JS-000000?style=for-the-badge\&logo=nextdotjs\&logoColor=white)
+![JavaScript](https://img.shields.io/badge/JAVASCRIPT-F7DF1E?style=for-the-badge\&logo=javascript\&logoColor=black)
+![React](https://img.shields.io/badge/REACT-61DAFB?style=for-the-badge\&logo=react\&logoColor=black)
+![TailwindCSS](https://img.shields.io/badge/TAILWINDCSS-06B6D4?style=for-the-badge\&logo=tailwindcss\&logoColor=white)
 
-## Login Requests
+## Backend & Services
 
-New users can click `Request Login Access` on the login page. The request is saved in `loginRequests`, and WhatsApp opens with the approval message for the admin.
+![Firebase](https://img.shields.io/badge/FIREBASE-FFCA28?style=for-the-badge\&logo=firebase\&logoColor=black)
+![Firebase Auth](https://img.shields.io/badge/FIREBASE_AUTH-FFCA28?style=for-the-badge\&logo=firebase\&logoColor=black)
+![Firestore](https://img.shields.io/badge/FIRESTORE-FFCA28?style=for-the-badge\&logo=firebase\&logoColor=black)
 
-Admins manage requests in `Admin > Login Requests`:
+## OCR & Document Processing
 
-- Approve as User
-- Approve as Admin
-- Reject
-- Delete Request
-- Override the requested password before approval
+![OCR](https://img.shields.io/badge/OCR-4285F4?style=for-the-badge)
+![PDF Processing](https://img.shields.io/badge/PDF_PROCESSING-E34F26?style=for-the-badge)
 
-## Firebase Collections
+## Deployment
 
-- `users`
-- `loginRequests`
-- `pdfs`
-- `questions`
-- `examResults`
-- `quotes`
-- `progress`
+![Vercel](https://img.shields.io/badge/VERCEL-000000?style=for-the-badge\&logo=vercel\&logoColor=white)
 
-## Contact Displayed On Login
+## Development Tools
 
-- Email: reshin0026@gmail.com
-- WhatsApp: 8807905821
-- Developer: Ginu
+![Git](https://img.shields.io/badge/GIT-F05032?style=for-the-badge\&logo=git\&logoColor=white)
+![GitHub](https://img.shields.io/badge/GITHUB-181717?style=for-the-badge\&logo=github\&logoColor=white)
+
+---
+
+# 🎓 Impact
+
+PadLEI helps students:
+
+* Reduce study preparation time
+* Convert PDFs into interactive learning material
+* Practice effectively with mock tests
+* Identify weak areas
+* Improve examination readiness
+* Track academic progress scientifically
+
+---
+
+# Future Enhancements
+
+* AI-generated explanations
+* Subject-wise analytics
+* Leaderboards
+* Collaborative study groups
+* Flashcard generation
+* Mobile application
+* Multi-language OCR support
+
+---
+
+## Author
+
+Developed by Reshin Ginu
+
+Built to improve medical education through technology and structured learning experiences.
