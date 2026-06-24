@@ -51,6 +51,10 @@ service cloud.firestore {
       return isApproved() && request.resource.data.userId == request.auth.uid;
     }
 
+    function ownProgressDocument(progressId) {
+      return isApproved() && progressId.matches(request.auth.uid + "_.*");
+    }
+
     function validLoginRequestCreate() {
       return request.resource.data.keys().hasOnly([
           "requestId",
@@ -129,7 +133,9 @@ service cloud.firestore {
     }
 
     match /progress/{progressId} {
-      allow read, delete: if ownsUserData();
+      allow get: if ownProgressDocument(progressId) || ownsUserData();
+      allow list: if isAdmin();
+      allow delete: if ownsUserData();
       allow create: if createsOwnUserData();
       allow update: if ownsUserData();
     }

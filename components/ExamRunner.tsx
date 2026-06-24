@@ -7,7 +7,7 @@ import { useRouter } from "next/navigation";
 import { Flag, Timer } from "lucide-react";
 import { db } from "@/lib/firebase";
 import { buildExamQuestions, scoreExam } from "@/lib/exam";
-import { getDisplayOptionKeys } from "@/lib/question-options";
+import { getDisplayOptions } from "@/lib/question-options";
 import { useAuth } from "@/components/AuthProvider";
 import { QuestionDiagrams } from "@/components/QuestionDiagrams";
 import { ReprocessPdfButton } from "@/components/ReprocessPdfButton";
@@ -21,7 +21,7 @@ export function ExamRunner({ allQuestions, settings }: { allQuestions: Question[
   const questions = useMemo(() => buildExamQuestions(allQuestions, settings), [allQuestions, settings]);
   const optionOrderByQuestion = useMemo(() => {
     const shuffleChoices = settings.shuffleChoices !== false;
-    return Object.fromEntries(questions.map((item) => [item.id, getDisplayOptionKeys(item, shuffleChoices)]));
+    return Object.fromEntries(questions.map((item) => [item.id, getDisplayOptions(item, shuffleChoices)]));
   }, [questions, settings.shuffleChoices]);
   const [current, setCurrent] = useState(0);
   const [selected, setSelected] = useState<Record<string, string>>({});
@@ -45,7 +45,7 @@ export function ExamRunner({ allQuestions, settings }: { allQuestions: Question[
   }, [settings.timerMinutes]);
 
   const question = questions[current];
-  const optionKeys = question ? optionOrderByQuestion[question.id] || getDisplayOptionKeys(question, settings.shuffleChoices !== false) : [];
+  const displayOptions = question ? optionOrderByQuestion[question.id] || getDisplayOptions(question, settings.shuffleChoices !== false) : [];
   const time = `${Math.floor(remaining / 60).toString().padStart(2, "0")}:${(remaining % 60).toString().padStart(2, "0")}`;
 
   async function submit(auto = false) {
@@ -90,13 +90,13 @@ export function ExamRunner({ allQuestions, settings }: { allQuestions: Question[
         <p className="mt-6 break-words text-base font-semibold leading-7 sm:text-lg sm:leading-8">{question.questionText}</p>
         <QuestionDiagrams question={question} className="mt-5" />
         <div className="mt-5 grid gap-3">
-          {optionKeys.map((key) => (
+          {displayOptions.map((option) => (
             <button
-              key={key}
-              className={`min-h-12 rounded-lg border p-4 text-left text-sm leading-6 transition ${selected[question.id] === key ? "border-aqua bg-aqua/10" : "border-slate-200 bg-white hover:border-aqua/50"}`}
-              onClick={() => setSelected((answers) => ({ ...answers, [question.id]: key }))}
+              key={option.displayKey}
+              className={`min-h-12 rounded-lg border p-4 text-left text-sm leading-6 transition ${selected[question.id] === option.optionKey ? "border-aqua bg-aqua/10" : "border-slate-200 bg-white hover:border-aqua/50"}`}
+              onClick={() => setSelected((answers) => ({ ...answers, [question.id]: option.optionKey }))}
             >
-              <span className="font-bold">{key}.</span> {question.options[key]}
+              <span className="font-bold">{option.displayKey}.</span> {option.text}
             </button>
           ))}
         </div>

@@ -13,7 +13,7 @@ import { ReprocessPdfButton } from "@/components/ReprocessPdfButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getDisplayOptionKeys, isReadyQuestion } from "@/lib/question-options";
+import { getDisplayOptions, isReadyQuestion } from "@/lib/question-options";
 import type { Progress, Question } from "@/types/models";
 
 export function StudyViewer({ pdfId }: { pdfId: string }) {
@@ -24,6 +24,10 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
   const [showAnswer, setShowAnswer] = useState(false);
   const [shuffleChoices, setShuffleChoices] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
+
+  function emptyProgress(userId: string): Progress {
+    return { userId, pdfId, studiedQuestions: [], learnedQuestions: [], bookmarkedQuestions: [], weakQuestions: [], bestScore: 0, averageScore: 0 };
+  }
 
   useEffect(() => {
     if (!appUser) return;
@@ -39,13 +43,14 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
   useEffect(() => {
     if (!appUser) return;
     const progressRef = doc(db, "progress", `${appUser.uid}_${pdfId}`);
-    getDoc(progressRef).then((snapshot) => {
-      setProgress(
-        snapshot.exists()
-          ? (snapshot.data() as Progress)
-          : { userId: appUser.uid, pdfId, studiedQuestions: [], learnedQuestions: [], bookmarkedQuestions: [], weakQuestions: [], bestScore: 0, averageScore: 0 }
-      );
-    });
+    getDoc(progressRef)
+      .then((snapshot) => {
+        setProgress(snapshot.exists() ? (snapshot.data() as Progress) : emptyProgress(appUser.uid));
+      })
+      .catch((error) => {
+        handleSnapshotError(error, "study progress");
+        setProgress(emptyProgress(appUser.uid));
+      });
   }, [appUser, pdfId]);
 
   const filtered = useMemo(() => {
@@ -56,7 +61,8 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
   }, [questions, queryText]);
 
   const question = filtered[current];
-  const optionKeys = useMemo(() => (question ? getDisplayOptionKeys(question, shuffleChoices) : []), [question, shuffleChoices]);
+  const displayOptions = useMemo(() => (question ? getDisplayOptions(question, shuffleChoices) : []), [question, shuffleChoices]);
+  const displayedCorrectAnswer = displayOptions.find((option) => option.optionKey === question?.correctAnswer)?.displayKey || question?.correctAnswer || "";
   const readyCount = questions.filter((item) => item.status === "ready").length;
   const percent = readyCount && progress ? Math.min(100, Math.round((progress.studiedQuestions.length / readyCount) * 100)) : 0;
 
@@ -109,15 +115,15 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
           <p className="mt-5 break-words text-base font-semibold leading-7 sm:text-lg sm:leading-8">{question.questionText}</p>
           <QuestionDiagrams question={question} className="mt-5" />
           <div className="mt-5 grid gap-3">
-            {optionKeys.map((key) => (
-              <div key={key} className="min-h-12 rounded-lg border border-slate-200 bg-white p-3 text-sm leading-6">
-                <span className="font-bold">{key}.</span> {question.options[key]}
+            {displayOptions.map((option) => (
+              <div key={option.displayKey} className="min-h-12 rounded-lg border border-slate-200 bg-white p-3 text-sm leading-6">
+                <span className="font-bold">{option.displayKey}.</span> {option.text}
               </div>
             ))}
           </div>
           {showAnswer ? (
             <div className="mt-5 rounded-lg bg-green-50 p-4 text-sm text-green-900">
-              <p className="font-semibold">Correct answer: {question.correctAnswer}</p>
+              <p className="font-semibold">Correct answer: {displayedCorrectAnswer}</p>
               {question.explanation ? <p className="mt-2">{question.explanation}</p> : null}
             </div>
           ) : null}

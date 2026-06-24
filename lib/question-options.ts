@@ -7,9 +7,26 @@ export function getVisibleOptionKeys(question: Question) {
   return optionKeys.filter((key) => Boolean(question.options?.[key]?.trim()));
 }
 
-export function getDisplayOptionKeys(question: Question, shuffleChoices = false) {
-  const keys = getVisibleOptionKeys(question);
-  if (!shuffleChoices || keys.length <= 1) return keys;
+export function getDisplayOptionKeys(question: Question, _shuffleChoices = false) {
+  return getVisibleOptionKeys(question);
+}
+
+export function getDisplayOptions(question: Question, shuffleChoices = false) {
+  const displayKeys = getVisibleOptionKeys(question);
+  const sourceKeys = shuffleChoices ? shuffledContentKeys(displayKeys) : displayKeys;
+
+  return displayKeys.map((displayKey, index) => {
+    const optionKey = sourceKeys[index] || displayKey;
+    return {
+      displayKey,
+      optionKey,
+      text: question.options?.[optionKey] || ""
+    };
+  });
+}
+
+function shuffledContentKeys(keys: OptionKey[]) {
+  if (keys.length <= 1) return keys;
   const shuffled = shuffle(keys);
   const stayedInOrder = shuffled.every((key, index) => key === keys[index]);
   return stayedInOrder ? [...shuffled.slice(1), shuffled[0]] : shuffled;
