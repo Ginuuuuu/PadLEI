@@ -3,16 +3,17 @@
 import { useEffect, useMemo, useState } from "react";
 import Link from "next/link";
 import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from "firebase/firestore";
-import { Bookmark, CheckCircle2, Search } from "lucide-react";
+import { Bookmark, CheckCircle2, Search, Shuffle } from "lucide-react";
 import toast from "react-hot-toast";
 import { db } from "@/lib/firebase";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { useAuth } from "@/components/AuthProvider";
+import { QuestionDiagrams } from "@/components/QuestionDiagrams";
 import { ReprocessPdfButton } from "@/components/ReprocessPdfButton";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
-import { getVisibleOptionKeys, isReadyQuestion } from "@/lib/question-options";
+import { getDisplayOptionKeys, isReadyQuestion } from "@/lib/question-options";
 import type { Progress, Question } from "@/types/models";
 
 export function StudyViewer({ pdfId }: { pdfId: string }) {
@@ -21,6 +22,7 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
   const [queryText, setQueryText] = useState("");
   const [current, setCurrent] = useState(0);
   const [showAnswer, setShowAnswer] = useState(false);
+  const [shuffleChoices, setShuffleChoices] = useState(false);
   const [progress, setProgress] = useState<Progress | null>(null);
 
   useEffect(() => {
@@ -54,6 +56,7 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
   }, [questions, queryText]);
 
   const question = filtered[current];
+  const optionKeys = useMemo(() => (question ? getDisplayOptionKeys(question, shuffleChoices) : []), [question, shuffleChoices]);
   const readyCount = questions.filter((item) => item.status === "ready").length;
   const percent = readyCount && progress ? Math.min(100, Math.round((progress.studiedQuestions.length / readyCount) * 100)) : 0;
 
@@ -87,21 +90,27 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
   }
 
   return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_18rem]">
-      <div className="space-y-4">
-        <div className="relative">
-          <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
-          <Input className="pl-9" value={queryText} onChange={(event) => { setQueryText(event.target.value); setCurrent(0); }} placeholder="Search questions or enter question number" />
+    <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_18rem]">
+      <div className="min-w-0 space-y-4">
+        <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto]">
+          <div className="relative min-w-0">
+            <Search className="absolute left-3 top-3 h-4 w-4 text-slate-400" />
+            <Input className="pl-9" value={queryText} onChange={(event) => { setQueryText(event.target.value); setCurrent(0); }} placeholder="Search questions or enter question number" />
+          </div>
+          <Button className="w-full sm:w-auto" variant={shuffleChoices ? "primary" : "secondary"} onClick={() => setShuffleChoices((value) => !value)}>
+            <Shuffle className="h-4 w-4" /> Shuffle choices
+          </Button>
         </div>
         <Card>
-          <div className="flex items-center justify-between">
+          <div className="flex flex-wrap items-center justify-between gap-2">
             <span className="rounded-lg bg-aqua/10 px-3 py-1 text-sm font-semibold text-aqua">Question {question.questionNumber}</span>
             <span className="text-sm text-slate-500">{current + 1} / {filtered.length}</span>
           </div>
-          <p className="mt-5 text-lg font-semibold leading-8">{question.questionText}</p>
+          <p className="mt-5 break-words text-base font-semibold leading-7 sm:text-lg sm:leading-8">{question.questionText}</p>
+          <QuestionDiagrams question={question} className="mt-5" />
           <div className="mt-5 grid gap-3">
-            {getVisibleOptionKeys(question).map((key) => (
-              <div key={key} className="rounded-lg border border-slate-200 bg-white p-3 text-sm">
+            {optionKeys.map((key) => (
+              <div key={key} className="min-h-12 rounded-lg border border-slate-200 bg-white p-3 text-sm leading-6">
                 <span className="font-bold">{key}.</span> {question.options[key]}
               </div>
             ))}
@@ -112,19 +121,19 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
               {question.explanation ? <p className="mt-2">{question.explanation}</p> : null}
             </div>
           ) : null}
-          <div className="mt-5 flex flex-wrap gap-2">
-            <Button onClick={() => setShowAnswer((value) => !value)}>{showAnswer ? "Hide answer" : "Show answer"}</Button>
-            <Button variant="secondary" onClick={() => markStudied("studiedQuestions")}>Mark studied</Button>
-            <Button variant="secondary" onClick={() => markStudied("learnedQuestions")}><CheckCircle2 className="h-4 w-4" /> Learned</Button>
-            <Button variant="secondary" onClick={() => markStudied("bookmarkedQuestions")}><Bookmark className="h-4 w-4" /> Bookmark</Button>
+          <div className="mt-5 grid gap-2 sm:flex sm:flex-wrap">
+            <Button className="w-full sm:w-auto" onClick={() => setShowAnswer((value) => !value)}>{showAnswer ? "Hide answer" : "Show answer"}</Button>
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => markStudied("studiedQuestions")}>Mark studied</Button>
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => markStudied("learnedQuestions")}><CheckCircle2 className="h-4 w-4" /> Learned</Button>
+            <Button className="w-full sm:w-auto" variant="secondary" onClick={() => markStudied("bookmarkedQuestions")}><Bookmark className="h-4 w-4" /> Bookmark</Button>
           </div>
         </Card>
-        <div className="flex justify-between">
+        <div className="grid grid-cols-2 gap-2">
           <Button variant="secondary" disabled={current === 0} onClick={() => { setCurrent(current - 1); setShowAnswer(false); }}>Previous</Button>
           <Button disabled={current >= filtered.length - 1} onClick={() => { setCurrent(current + 1); setShowAnswer(false); }}>Next</Button>
         </div>
       </div>
-      <Card className="h-fit">
+      <Card className="h-fit lg:sticky lg:top-6">
         <p className="font-semibold">Progress</p>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-slate-100">
           <div className="h-full bg-aqua" style={{ width: `${percent}%` }} />

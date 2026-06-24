@@ -6,6 +6,7 @@ import { CheckCircle2, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { db } from "@/lib/firebase";
 import { handleSnapshotError } from "@/lib/firestore-errors";
+import { QuestionDiagrams } from "@/components/QuestionDiagrams";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -197,6 +198,7 @@ export function QuestionEditor({ pdfId }: { pdfId: string }) {
               <span>Question text</span>
               <Textarea className="min-h-24" value={question.questionText} onChange={(event) => updateLocal(question.id, { questionText: event.target.value })} />
             </label>
+            <QuestionDiagrams question={question} className="mt-4" />
             <div className="mt-4 grid gap-3 md:grid-cols-2">
               {optionKeys.map((key) => (
                 <label key={key} className="block space-y-2 text-sm font-semibold text-slate-600">

@@ -3,7 +3,11 @@ import { adminDb } from "@/lib/firebase-admin";
 import { parseMcqLines, parseMcqText, sanitizeText, type ExtractedLine, type ParsedQuestion } from "@/lib/extraction";
 import { isReadyQuestion, normalizeQuestionStatus, questionCounts } from "@/lib/question-options";
 import { cloudinaryPageImageUrl, getPdfBucket, isCloudinaryImagePdfPath, isLocalPdfPath, readPdfBuffer } from "@/lib/server-pdf-storage";
-import type { Question } from "@/types/models";
+import type { Question, QuestionDiagram } from "@/types/models";
+
+const maxDiagramsPerQuestion = 2;
+const maxDiagramDataUrlChars = 450_000;
+const maxDiagramOutputWidth = 900;
 
 export async function processStoredPdf({
   pdfId,
@@ -37,7 +41,8 @@ export async function processPdfBuffer({
 }) {
   try {
     await adminDb.collection("pdfs").doc(pdfId).set({ status: "extracting", errorMessage: "" }, { merge: true });
-    const textLines = await extractPdfTextLines(buffer);
+    const pdfContent = await extractPdfContent(buffer);
+    const textLines = pdfContent.lines;
     let text = sanitizeText(textLines.map((line) => line.text).join("\n")) || (await extractPdfText(buffer));
     let extractionSource = "PDF text";
     let parsedQuestions: ParsedQuestion[] = textLines.length ? parseMcqLines(textLines) : [];
@@ -61,6 +66,10 @@ export async function processPdfBuffer({
 
     if (!parsedQuestions.length && text) {
       parsedQuestions = parseMcqText(text);
+    }
+
+    if (parsedQuestions.length) {
+      parsedQuestions = await attachDiagramsToParsedQuestions(parsedQuestions, textLines, pdfContent.pages);
     }
 
     let questions: Question[] = parsedQuestions.length
@@ -182,10 +191,159 @@ function normalizeQuestion(question: Question): Question {
     },
     correctAnswer: question.correctAnswer || "",
     explanation: question.explanation || "",
+    diagrams: normalizeDiagrams(question.diagrams),
     status: normalizeQuestionStatus(isReadyQuestion(question) ? "ready" : question.status),
     confidence: typeof question.confidence === "number" ? question.confidence : isReadyQuestion(question) ? 0.92 : 0.45,
     extractionNote: question.extractionNote || ""
   };
+}
+
+function normalizeDiagrams(diagrams?: Question["diagrams"]): QuestionDiagram[] {
+  return (diagrams || [])
+    .filter((diagram) => diagram?.src && diagram.src.startsWith("data:image/") && diagram.src.length <= maxDiagramDataUrlChars)
+    .slice(0, maxDiagramsPerQuestion)
+    .map((diagram, index) => {
+      const normalized: QuestionDiagram = {
+        id: diagram.id || `diagram-${index + 1}`,
+        src: diagram.src,
+        alt: diagram.alt || `Question diagram ${index + 1}`
+      };
+      if (Number.isFinite(diagram.pageNumber)) normalized.pageNumber = diagram.pageNumber;
+      if (Number.isFinite(diagram.width)) normalized.width = diagram.width;
+      if (Number.isFinite(diagram.height)) normalized.height = diagram.height;
+      return normalized;
+    });
+}
+
+async function attachDiagramsToParsedQuestions(questions: ParsedQuestion[], lines: ExtractedLine[], pages: PdfRenderedPage[]) {
+  if (!pages.length) return questions;
+  const { createCanvas } = await import("@napi-rs/canvas");
+
+  return questions.map((question) => {
+    const diagrams = extractQuestionDiagrams(question, lines, pages, createCanvas);
+    return diagrams.length ? { ...question, diagrams } : question;
+  });
+}
+
+function extractQuestionDiagrams(
+  question: ParsedQuestion,
+  lines: ExtractedLine[],
+  pages: PdfRenderedPage[],
+  createCanvas: (width: number, height: number) => { getContext: (type: "2d") => unknown; toBuffer: (mimeType: "image/png") => Buffer }
+): QuestionDiagram[] {
+  if (!Number.isInteger(question.sourceLineStart) || !Number.isInteger(question.sourceLineEnd)) return [];
+  const start = Math.max(0, question.sourceLineStart || 0);
+  const end = Math.min(lines.length - 1, question.sourceLineEnd || start);
+  const sourceLines = lines.slice(start, end + 1).filter((line) => line.pageNumber && line.bounds);
+  const pageNumbers = [...new Set(sourceLines.map((line) => line.pageNumber as number))];
+  const diagrams: QuestionDiagram[] = [];
+
+  for (const pageNumber of pageNumbers) {
+    const page = pages.find((item) => item.pageNumber === pageNumber);
+    if (!page) continue;
+    const pageLines = sourceLines.filter((line) => line.pageNumber === pageNumber && line.bounds);
+    const diagram = cropDiagramFromPage(question.questionNumber, page, pageLines, createCanvas);
+    if (diagram) diagrams.push(diagram);
+    if (diagrams.length >= maxDiagramsPerQuestion) break;
+  }
+
+  return diagrams;
+}
+
+function cropDiagramFromPage(
+  questionNumber: number,
+  page: PdfRenderedPage,
+  lines: ExtractedLine[],
+  createCanvas: (width: number, height: number) => { getContext: (type: "2d") => unknown; toBuffer: (mimeType: "image/png") => Buffer }
+): QuestionDiagram | null {
+  const bounds = lines.map((line) => line.bounds).filter((item): item is NonNullable<ExtractedLine["bounds"]> => Boolean(item));
+  if (!bounds.length) return null;
+
+  const y0 = Math.max(0, Math.floor(Math.min(...bounds.map((item) => item.y0)) - 28));
+  const y1 = Math.min(page.height - 1, Math.ceil(Math.max(...bounds.map((item) => item.y1)) + 28));
+  const textBoxes = bounds.map((item) => ({
+    x0: Math.max(0, item.x0 - 10),
+    y0: Math.max(0, item.y0 - 8),
+    x1: Math.min(page.width - 1, item.x1 + 10),
+    y1: Math.min(page.height - 1, item.y1 + 8)
+  }));
+
+  const ink = findNonTextInkBounds(page, y0, y1, textBoxes);
+  if (!ink) return null;
+
+  const cropX = Math.max(0, ink.x0 - 20);
+  const cropY = Math.max(0, ink.y0 - 20);
+  const cropWidth = Math.min(page.width - cropX, ink.x1 - ink.x0 + 40);
+  const cropHeight = Math.min(page.height - cropY, ink.y1 - ink.y0 + 40);
+  if (cropWidth < 60 || cropHeight < 45) return null;
+
+  const scale = Math.min(1, maxDiagramOutputWidth / cropWidth);
+  const outputWidth = Math.max(1, Math.round(cropWidth * scale));
+  const outputHeight = Math.max(1, Math.round(cropHeight * scale));
+  const canvas = createCanvas(outputWidth, outputHeight);
+  const context = canvas.getContext("2d") as unknown as {
+    fillStyle: string;
+    fillRect: (x: number, y: number, width: number, height: number) => void;
+    drawImage: (...args: unknown[]) => void;
+  };
+  context.fillStyle = "white";
+  context.fillRect(0, 0, outputWidth, outputHeight);
+  context.drawImage(page.canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
+
+  const src = `data:image/png;base64,${canvas.toBuffer("image/png").toString("base64")}`;
+  if (src.length > maxDiagramDataUrlChars) return null;
+
+  return {
+    id: `q${questionNumber}-diagram-p${page.pageNumber}`,
+    src,
+    alt: `Diagram for question ${questionNumber}`,
+    pageNumber: page.pageNumber,
+    width: outputWidth,
+    height: outputHeight
+  };
+}
+
+function findNonTextInkBounds(
+  page: PdfRenderedPage,
+  y0: number,
+  y1: number,
+  textBoxes: Array<{ x0: number; y0: number; x1: number; y1: number }>
+) {
+  const step = 3;
+  let count = 0;
+  let x0 = page.width;
+  let yMin = page.height;
+  let x1 = 0;
+  let yMax = 0;
+
+  for (let y = y0; y <= y1; y += step) {
+    for (let x = 0; x < page.width; x += step) {
+      if (isInsideTextBox(x, y, textBoxes)) continue;
+      const index = (y * page.width + x) * 4;
+      if (!isDiagramInkPixel(page.image[index], page.image[index + 1], page.image[index + 2], page.image[index + 3])) continue;
+      count += 1;
+      x0 = Math.min(x0, x);
+      yMin = Math.min(yMin, y);
+      x1 = Math.max(x1, x);
+      yMax = Math.max(yMax, y);
+    }
+  }
+
+  const width = x1 - x0;
+  const height = yMax - yMin;
+  if (count < 90 || width < 70 || height < 42) return null;
+  return { x0, y0: yMin, x1, y1: yMax };
+}
+
+function isInsideTextBox(x: number, y: number, boxes: Array<{ x0: number; y0: number; x1: number; y1: number }>) {
+  return boxes.some((box) => x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1);
+}
+
+function isDiagramInkPixel(red: number, green: number, blue: number, alpha: number) {
+  if (alpha < 25) return false;
+  const luminance = red * 0.299 + green * 0.587 + blue * 0.114;
+  const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
+  return luminance < 205 && (luminance < 165 || chroma > 35);
 }
 
 async function extractPdfText(buffer: Buffer) {
@@ -209,7 +367,7 @@ async function extractWithPdfParse(buffer: Buffer) {
   return parsed.text || "";
 }
 
-async function extractPdfTextLines(buffer: Buffer): Promise<ExtractedLine[]> {
+async function extractPdfContent(buffer: Buffer): Promise<PdfTextExtraction> {
   const pdfjs = await import("pdfjs-dist/legacy/build/pdf.mjs");
   const { createCanvas } = await import("@napi-rs/canvas");
   const document = await pdfjs.getDocument(
@@ -221,6 +379,7 @@ async function extractPdfTextLines(buffer: Buffer): Promise<ExtractedLine[]> {
     } as unknown as Parameters<typeof pdfjs.getDocument>[0]
   ).promise;
   const lines: ExtractedLine[] = [];
+  const pages: PdfRenderedPage[] = [];
   const scale = 2;
 
   for (let pageNumber = 1; pageNumber <= document.numPages; pageNumber += 1) {
@@ -243,20 +402,37 @@ async function extractPdfTextLines(buffer: Buffer): Promise<ExtractedLine[]> {
     }).promise;
     const image = context.getImageData(0, 0, canvas.width, canvas.height).data;
     const grouped = groupPdfTextItems(textItems, viewport, scale);
+    pages.push({ pageNumber, width: canvas.width, height: canvas.height, canvas, image });
 
     for (const group of grouped) {
       const text = buildLineText(group.items);
       if (!text) continue;
+      const bounds = lineBounds(group, canvas.width, canvas.height);
       lines.push({
         text,
+        pageNumber,
+        bounds,
         highlighted: detectYellowHighlight(group, image, canvas.width, canvas.height),
         styled: detectStyledAnswerMarker(group)
       });
     }
   }
 
-  return lines;
+  return { lines, pages };
 }
+
+type PdfTextExtraction = {
+  lines: ExtractedLine[];
+  pages: PdfRenderedPage[];
+};
+
+type PdfRenderedPage = {
+  pageNumber: number;
+  width: number;
+  height: number;
+  canvas: unknown;
+  image: Uint8ClampedArray;
+};
 
 type PdfLineGroup = {
   y: number;
@@ -336,6 +512,17 @@ function buildLineText(items: PdfLineGroup["items"]) {
   }
 
   return text.replace(/\s+/g, " ").trim();
+}
+
+function lineBounds(group: PdfLineGroup, pageWidth: number, pageHeight: number) {
+  return {
+    x0: Math.max(0, Math.floor(Math.min(...group.items.map((item) => item.x0)) - 4)),
+    y0: Math.max(0, Math.floor(Math.min(...group.items.map((item) => item.yTop)) - 4)),
+    x1: Math.min(pageWidth - 1, Math.ceil(Math.max(...group.items.map((item) => item.x1)) + 4)),
+    y1: Math.min(pageHeight - 1, Math.ceil(Math.max(...group.items.map((item) => item.yBottom)) + 4)),
+    pageWidth,
+    pageHeight
+  };
 }
 
 function detectYellowHighlight(group: PdfLineGroup, image: Uint8ClampedArray, width: number, height: number) {

@@ -1,13 +1,27 @@
 import type { Question } from "@/types/models";
 import { optionKeys, questionStatus } from "@/lib/question-options";
 
+export type ExtractedBounds = {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  pageWidth: number;
+  pageHeight: number;
+};
+
 export type ExtractedLine = {
   text: string;
   highlighted?: boolean;
   styled?: boolean;
+  pageNumber?: number;
+  bounds?: ExtractedBounds;
 };
 
-export type ParsedQuestion = Omit<Question, "id" | "pdfId" | "userId">;
+export type ParsedQuestion = Omit<Question, "id" | "pdfId" | "userId"> & {
+  sourceLineStart?: number;
+  sourceLineEnd?: number;
+};
 
 const tickPrefixPattern = String.raw`(?:[\u2713\u2714\u2705\u2611\u221a]\s*|\[\s*x\s*\]\s*|\(\s*x\s*\)\s*)?`;
 const cyrillicOptionChars = "\u0410\u0430\u0411\u0431\u0412\u0432\u0413\u0433\u0414\u0434\u0415\u0435";
@@ -78,7 +92,7 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
   let current = null as ParsedQuestion | null;
   let lastOption: keyof ParsedQuestion["options"] | null = null;
 
-  function startQuestion(questionNumber: number, questionText: string) {
+  function startQuestion(questionNumber: number, questionText: string, sourceLineIndex: number) {
     current = {
       questionNumber,
       questionText: cleanInlineMarkers(questionText),
@@ -86,9 +100,15 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
       correctAnswer: "",
       explanation: "",
       status: "needsReview",
-      extractionNote: ""
+      extractionNote: "",
+      sourceLineStart: sourceLineIndex,
+      sourceLineEnd: sourceLineIndex
     };
     lastOption = null;
+  }
+
+  function touchCurrent(sourceLineIndex: number) {
+    if (current) current.sourceLineEnd = sourceLineIndex;
   }
 
   function finishCurrent() {
@@ -106,12 +126,14 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
     lastOption = null;
   }
 
-  for (const line of lines) {
+  for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
+    const line = lines[lineIndex];
     const rawText = line.text.replace(/\s+/g, " ").trim();
     if (!rawText) continue;
 
     const answerLineMatch = rawText.match(/^(?:answer|ans|correct(?:\s+answer|\s+option)?)\s*[:\-.)]\s*([A-F1-6])(?=\s|$|[,;])/i);
     if (current && answerLineMatch) {
+      touchCurrent(lineIndex);
       current.correctAnswer = toAnswerLetter(answerLineMatch[1]);
       current.extractionNote = "Answer detected from text.";
       continue;
@@ -135,13 +157,14 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
 
     if (shouldStartQuestion && questionMatch) {
       finishCurrent();
-      startQuestion(Number(questionMatch[1]), questionMatch[2]);
+      startQuestion(Number(questionMatch[1]), questionMatch[2], lineIndex);
       continue;
     }
 
     if (current && optionMatch) {
       const key = toAnswerLetter(optionMatch[1] || optionMatch[2]);
       if (key) {
+        touchCurrent(lineIndex);
         const optionText = cleanInlineMarkers(optionMatch[3]);
         current.options[key] = [current.options[key], optionText].filter(Boolean).join(" ").trim();
         lastOption = key;
@@ -154,17 +177,19 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
     }
 
     if (!current && questionMatch) {
-      startQuestion(Number(questionMatch[1]), questionMatch[2]);
+      startQuestion(Number(questionMatch[1]), questionMatch[2], lineIndex);
       continue;
     }
 
     if (current && lastOption) {
+      touchCurrent(lineIndex);
       current.options[lastOption] = `${current.options[lastOption]} ${cleanInlineMarkers(rawText)}`.trim();
       if (line.highlighted || line.styled || hasInlineAnswerMarker(rawText)) {
         current.correctAnswer = lastOption;
         current.extractionNote = line.highlighted ? "Answer detected from highlighted option." : line.styled ? "Answer detected from styled option." : "Answer detected from tick/mark.";
       }
     } else if (current) {
+      touchCurrent(lineIndex);
       current.questionText = `${current.questionText} ${cleanInlineMarkers(rawText)}`.trim();
     }
   }

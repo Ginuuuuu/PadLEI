@@ -23,7 +23,6 @@ export function AppShell({ children }: { children: React.ReactNode }) {
     { href: "/admin", label: "Admin", icon: ShieldCheck },
     { href: "/admin/login-requests", label: "Login Requests", icon: UserRoundPlus }
   ];
-  const mobileNav = appUser?.role === "admin" ? [...nav, ...adminNav] : nav;
 
   return (
     <div className="min-h-screen">
@@ -63,22 +62,35 @@ export function AppShell({ children }: { children: React.ReactNode }) {
               <LogOut className="h-4 w-4" />
             </Button>
           </div>
-          <div className="mt-3 flex gap-2 overflow-x-auto pb-1">
-            {mobileNav.map((item) => (
-              <Link key={item.href} href={item.href} className={cn("inline-flex min-w-fit items-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold", (item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)) ? "bg-ink text-white" : "bg-white text-ink")}>
-                <item.icon className="h-4 w-4" />
-                <span>{item.label}</span>
-              </Link>
-            ))}
-          </div>
+          {appUser?.role === "admin" ? (
+            <div className="mt-3 grid grid-cols-2 gap-2">
+              {adminNav.map((item) => (
+                <Link key={item.href} href={item.href} className={cn("inline-flex min-h-11 items-center justify-center gap-2 rounded-lg px-3 py-2 text-sm font-semibold", (item.href === "/admin" ? pathname === "/admin" : pathname.startsWith(item.href)) ? "bg-ink text-white" : "bg-white text-ink")}>
+                  <item.icon className="h-4 w-4" />
+                  <span>{item.label}</span>
+                </Link>
+              ))}
+            </div>
+          ) : null}
         </header>
-        <main className="mx-auto max-w-7xl px-3 py-5 sm:px-6 lg:px-8">
+        <main className="mx-auto max-w-7xl px-3 py-5 pb-24 sm:px-6 lg:px-8 lg:pb-8">
           <Button variant="ghost" className="mb-4 hidden h-9 px-2 lg:inline-flex" onClick={() => router.back()}>
             <ArrowLeft className="h-4 w-4" /> Back
           </Button>
           {children}
         </main>
-        <footer className="px-4 pb-6 text-center text-xs text-slate-500">Developer: Ginu</footer>
+        <footer className="px-4 pb-24 text-center text-xs text-slate-500 lg:pb-6">Developer: Ginu</footer>
+        <nav className="fixed inset-x-0 bottom-0 z-30 grid grid-cols-5 border-t border-slate-200 bg-white/95 px-2 pb-[max(0.5rem,env(safe-area-inset-bottom))] pt-2 shadow-[0_-12px_30px_rgba(15,23,42,0.08)] backdrop-blur lg:hidden">
+          {nav.map((item) => {
+            const active = pathname.startsWith(item.href);
+            return (
+              <Link key={item.href} href={item.href} aria-current={active ? "page" : undefined} className={cn("flex min-h-14 min-w-0 flex-col items-center justify-center gap-1 rounded-lg px-1 text-[11px] font-semibold leading-tight", active ? "bg-ink text-white" : "text-slate-600")}>
+                <item.icon className="h-4 w-4" />
+                <span className="max-w-full truncate">{item.label}</span>
+              </Link>
+            );
+          })}
+        </nav>
       </div>
     </div>
   );

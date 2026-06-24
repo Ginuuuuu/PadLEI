@@ -4,6 +4,15 @@ export type QuestionStatus = "ready" | "needsReview" | "needs_review" | "failed"
 export type PdfStorageProvider = "cloudinary" | "firebase" | "local";
 export type OptionKey = "A" | "B" | "C" | "D" | "E" | "F";
 
+export type QuestionDiagram = {
+  id: string;
+  src: string;
+  alt: string;
+  pageNumber?: number;
+  width?: number;
+  height?: number;
+};
+
 export type AppUser = {
   uid: string;
   email: string;
@@ -53,6 +62,7 @@ export type Question = {
     E?: string;
     F?: string;
   };
+  diagrams?: QuestionDiagram[];
   correctAnswer: OptionKey | "";
   explanation?: string;
   status: QuestionStatus;
@@ -80,6 +90,7 @@ export type ExamSettings = {
   fromQuestion: number;
   toQuestion: number;
   order: "random" | "sequential";
+  shuffleChoices?: boolean;
   timerMinutes?: number;
   marksPerCorrect: number;
   negativeMarks: boolean;

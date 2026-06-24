@@ -50,6 +50,7 @@ export default function ExamPage() {
       fromQuestion: safeNumber(form.get("fromQuestion"), 1),
       toQuestion: safeNumber(form.get("toQuestion"), maxQuestion),
       order: form.get("order") === "random" ? "random" : "sequential",
+      shuffleChoices: form.get("shuffleChoices") === "on",
       timerMinutes: safeNumber(form.get("timerMinutes"), 0) || undefined,
       marksPerCorrect: safeNumber(form.get("marksPerCorrect"), 1),
       negativeMarks: form.get("negativeMarks") === "on",
@@ -86,7 +87,8 @@ export default function ExamPage() {
               <Field label="Order"><Select name="order" defaultValue="random"><option value="random">Random</option><option value="sequential">Sequential</option></Select></Field>
               <Field label="Optional timer minutes"><Input name="timerMinutes" type="number" min={0} placeholder="No timer" /></Field>
               <Field label="Marks per correct"><Input name="marksPerCorrect" type="number" min={1} defaultValue={1} /></Field>
-              <label className="flex items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm font-semibold"><input name="negativeMarks" type="checkbox" /> Enable negative marks</label>
+              <label className="flex min-h-11 items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm font-semibold"><input name="shuffleChoices" type="checkbox" defaultChecked /> Shuffle answer choices</label>
+              <label className="flex min-h-11 items-center gap-3 rounded-lg bg-slate-50 p-3 text-sm font-semibold"><input name="negativeMarks" type="checkbox" /> Enable negative marks</label>
               <Field label="Negative value"><Input name="negativeValue" type="number" min={0} step="0.25" defaultValue={0} /></Field>
               <Button className="sm:col-span-2">Start exam</Button>
             </form>

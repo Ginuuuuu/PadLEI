@@ -3,6 +3,7 @@
 import Link from "next/link";
 import { Award, Download, RotateCcw } from "lucide-react";
 import { gradeFromPercentage } from "@/lib/exam";
+import { QuestionDiagrams } from "@/components/QuestionDiagrams";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import type { ExamResult } from "@/types/models";
@@ -17,9 +18,9 @@ export function ResultView({ result }: { result: ExamResult }) {
             <h2 className="mt-1 text-3xl font-bold">{result.percentage}%</h2>
             <p className="mt-1 inline-flex items-center gap-2 font-semibold text-leaf"><Award className="h-4 w-4" /> {gradeFromPercentage(result.percentage)}</p>
           </div>
-          <div className="flex gap-2">
-            <Button variant="secondary" asChild><Link href={`/exam/${result.pdfId}`}><RotateCcw className="h-4 w-4" /> Retake</Link></Button>
-            <Button variant="secondary" onClick={() => window.print()}><Download className="h-4 w-4" /> PDF</Button>
+          <div className="grid w-full grid-cols-2 gap-2 sm:w-auto">
+            <Button className="w-full" variant="secondary" asChild><Link href={`/exam/${result.pdfId}`}><RotateCcw className="h-4 w-4" /> Retake</Link></Button>
+            <Button className="w-full" variant="secondary" onClick={() => window.print()}><Download className="h-4 w-4" /> PDF</Button>
           </div>
         </div>
       </Card>
@@ -39,10 +40,11 @@ export function ResultView({ result }: { result: ExamResult }) {
           const status = !answer?.selectedAnswer ? "Unattempted" : answer.isCorrect ? "Correct" : "Wrong";
           return (
             <Card key={question.id}>
-              <div className="flex items-center justify-between gap-3">
-                <h3 className="font-semibold">Q{index + 1}. {question.questionText}</h3>
+              <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
+                <h3 className="break-words font-semibold leading-7">Q{index + 1}. {question.questionText}</h3>
                 <span className={`rounded-lg px-3 py-1 text-xs font-semibold ${status === "Correct" ? "bg-green-100 text-green-800" : status === "Wrong" ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-600"}`}>{status}</span>
               </div>
+              <QuestionDiagrams question={question} className="mt-4" />
               <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
                 <p>Your answer: <b>{answer?.selectedAnswer || "Not answered"}</b></p>
                 <p>Correct answer: <b>{question.correctAnswer}</b></p>

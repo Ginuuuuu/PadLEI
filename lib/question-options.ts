@@ -1,9 +1,18 @@
 import type { OptionKey, Question, QuestionStatus } from "@/types/models";
+import { shuffle } from "@/lib/utils";
 
 export const optionKeys = ["A", "B", "C", "D", "E", "F"] as const satisfies readonly OptionKey[];
 
 export function getVisibleOptionKeys(question: Question) {
   return optionKeys.filter((key) => Boolean(question.options?.[key]?.trim()));
+}
+
+export function getDisplayOptionKeys(question: Question, shuffleChoices = false) {
+  const keys = getVisibleOptionKeys(question);
+  if (!shuffleChoices || keys.length <= 1) return keys;
+  const shuffled = shuffle(keys);
+  const stayedInOrder = shuffled.every((key, index) => key === keys[index]);
+  return stayedInOrder ? [...shuffled.slice(1), shuffled[0]] : shuffled;
 }
 
 export function hasUsableOptions(question: Pick<Question, "options" | "correctAnswer">) {

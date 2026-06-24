@@ -10,6 +10,7 @@ import { Card } from "@/components/ui/card";
 
 const maxSizeMb = 20;
 const vercelSafeFallbackMb = 4;
+const maxBrowserDiagramPayloadChars = 1_800_000;
 
 type UploadResult = {
   pdfId?: string;
@@ -60,9 +61,19 @@ type BrowserLineGroup = {
     text: string;
     x0: number;
     x1: number;
+    yTop: number;
+    yBottom: number;
     skew: number;
     fontName?: string;
   }>;
+};
+
+type BrowserRenderedPage = {
+  pageNumber: number;
+  width: number;
+  height: number;
+  canvas: HTMLCanvasElement;
+  image: Uint8ClampedArray;
 };
 
 async function readPayload<T extends { error?: string }>(response: Response): Promise<T> {
@@ -172,26 +183,40 @@ export function PdfUploader() {
 async function extractQuestionsInBrowser(file: File): Promise<BrowserExtraction> {
   const pdfjsLib = await import("pdfjs-dist");
   pdfjsLib.GlobalWorkerOptions.workerSrc = `https://unpkg.com/pdfjs-dist@${pdfjsLib.version}/build/pdf.worker.min.mjs`;
-  const document = await pdfjsLib.getDocument({
+  const pdfDocument = await pdfjsLib.getDocument({
     data: new Uint8Array(await file.arrayBuffer()),
     isEvalSupported: false,
     useSystemFonts: true
   }).promise;
   const lines: ExtractedLine[] = [];
-  const maxPages = Math.min(document.numPages, 80);
+  const pages: BrowserRenderedPage[] = [];
+  const maxPages = Math.min(pdfDocument.numPages, 80);
+  const scale = 1.6;
 
   for (let pageNumber = 1; pageNumber <= maxPages; pageNumber += 1) {
-    const page = await document.getPage(pageNumber);
+    const page = await pdfDocument.getPage(pageNumber);
     const content = await page.getTextContent();
     const textItems = content.items.filter(isBrowserPdfTextItem) as BrowserPdfTextItem[];
-    const viewport = page.getViewport({ scale: 1 });
-    const groupedLines = groupBrowserTextItems(textItems, viewport);
+    const viewport = page.getViewport({ scale });
+    const canvas = window.document.createElement("canvas");
+    canvas.width = Math.ceil(viewport.width);
+    canvas.height = Math.ceil(viewport.height);
+    const context = canvas.getContext("2d", { willReadFrequently: true });
+    if (!context) continue;
+    context.fillStyle = "white";
+    context.fillRect(0, 0, canvas.width, canvas.height);
+    await page.render({ canvasContext: context, viewport }).promise;
+    const image = context.getImageData(0, 0, canvas.width, canvas.height).data;
+    pages.push({ pageNumber, width: canvas.width, height: canvas.height, canvas, image });
+    const groupedLines = groupBrowserTextItems(textItems, viewport, scale);
 
     for (const group of groupedLines) {
       const text = buildBrowserLineText(group.items);
       if (!text) continue;
       lines.push({
         text,
+        pageNumber,
+        bounds: browserLineBounds(group, canvas.width, canvas.height),
         styled: detectBrowserStyledAnswer(group)
       });
     }
@@ -200,11 +225,12 @@ async function extractQuestionsInBrowser(file: File): Promise<BrowserExtraction>
   const text = sanitizeText(lines.map((line) => line.text).join("\n"));
   const lineQuestions = lines.length ? parseMcqLines(lines) : [];
   const fallbackQuestions = text ? parseMcqText(text) : [];
-  const questions = extractionScore(lineQuestions) >= extractionScore(fallbackQuestions) ? lineQuestions : fallbackQuestions;
+  const selectedQuestions = extractionScore(lineQuestions) >= extractionScore(fallbackQuestions) ? lineQuestions : fallbackQuestions;
+  const questions = attachBrowserDiagrams(selectedQuestions, lines, pages);
 
   return {
     questions,
-    source: document.numPages > maxPages ? `browser PDF line extraction, first ${maxPages} pages` : "browser PDF line extraction"
+    source: pdfDocument.numPages > maxPages ? `browser PDF line extraction, first ${maxPages} pages` : "browser PDF line extraction"
   };
 }
 
@@ -221,7 +247,8 @@ function isBrowserPdfTextItem(item: unknown): item is BrowserPdfTextItem {
 
 function groupBrowserTextItems(
   items: BrowserPdfTextItem[],
-  viewport: { convertToViewportPoint: (x: number, y: number) => number[] }
+  viewport: { convertToViewportPoint: (x: number, y: number) => number[] },
+  scale: number
 ) {
   const groups: BrowserLineGroup[] = [];
 
@@ -236,12 +263,15 @@ function groupBrowserTextItems(
       groups.push(group);
     }
 
-    const [x] = viewport.convertToViewportPoint(pdfX, pdfY);
-    const width = item.width || Math.max(text.length * (item.height || 10) * 0.45, 8);
+    const [x, baselineY] = viewport.convertToViewportPoint(pdfX, pdfY);
+    const height = (item.height || Math.abs(item.transform[3]) || 12) * scale;
+    const width = (item.width || Math.max(text.length * (item.height || 10) * 0.45, 8)) * scale;
     group.items.push({
       text,
       x0: x,
       x1: x + width,
+      yTop: baselineY - height,
+      yBottom: baselineY + 4,
       skew: item.transform[2] || 0,
       fontName: item.fontName
     });
@@ -264,10 +294,142 @@ function buildBrowserLineText(items: BrowserLineGroup["items"]) {
   return text.replace(/\s+/g, " ").trim();
 }
 
+function browserLineBounds(group: BrowserLineGroup, pageWidth: number, pageHeight: number) {
+  return {
+    x0: Math.max(0, Math.floor(Math.min(...group.items.map((item) => item.x0)) - 4)),
+    y0: Math.max(0, Math.floor(Math.min(...group.items.map((item) => item.yTop)) - 4)),
+    x1: Math.min(pageWidth - 1, Math.ceil(Math.max(...group.items.map((item) => item.x1)) + 4)),
+    y1: Math.min(pageHeight - 1, Math.ceil(Math.max(...group.items.map((item) => item.yBottom)) + 4)),
+    pageWidth,
+    pageHeight
+  };
+}
+
 function detectBrowserStyledAnswer(group: BrowserLineGroup) {
   const text = buildBrowserLineText(group.items);
   if (!/^(?:[\u2713\u2714\u2705\u2611\u221a]\s*|\[\s*x\s*\]\s*|\(\s*x\s*\)\s*)?(?:Hint\s*)?(?:\(?[A-F\u0410\u0430\u0411\u0431\u0412\u0432\u0413\u0433\u0414\u0434\u0415\u0435]\)?|[1-6])[\).:\-]/i.test(text)) return false;
   return group.items.some((item) => Math.abs(item.skew) > 0.5 || /italic|oblique/i.test(item.fontName || ""));
+}
+
+function attachBrowserDiagrams(questions: ParsedQuestion[], lines: ExtractedLine[], pages: BrowserRenderedPage[]) {
+  if (!pages.length) return questions;
+  let remainingDiagramBudget = maxBrowserDiagramPayloadChars;
+  return questions.map((question) => {
+    const diagrams = extractBrowserQuestionDiagrams(question, lines, pages).filter((diagram) => {
+      if (diagram.src.length > remainingDiagramBudget) return false;
+      remainingDiagramBudget -= diagram.src.length;
+      return true;
+    });
+    return diagrams.length ? { ...question, diagrams } : question;
+  });
+}
+
+function extractBrowserQuestionDiagrams(question: ParsedQuestion, lines: ExtractedLine[], pages: BrowserRenderedPage[]) {
+  if (!Number.isInteger(question.sourceLineStart) || !Number.isInteger(question.sourceLineEnd)) return [];
+  const start = Math.max(0, question.sourceLineStart || 0);
+  const end = Math.min(lines.length - 1, question.sourceLineEnd || start);
+  const sourceLines = lines.slice(start, end + 1).filter((line) => line.pageNumber && line.bounds);
+  const pageNumbers = [...new Set(sourceLines.map((line) => line.pageNumber as number))];
+  const diagrams: NonNullable<ParsedQuestion["diagrams"]> = [];
+
+  for (const pageNumber of pageNumbers) {
+    const page = pages.find((item) => item.pageNumber === pageNumber);
+    if (!page) continue;
+    const pageLines = sourceLines.filter((line) => line.pageNumber === pageNumber && line.bounds);
+    const diagram = cropBrowserDiagramFromPage(question.questionNumber, page, pageLines);
+    if (diagram) diagrams.push(diagram);
+    if (diagrams.length >= 2) break;
+  }
+
+  return diagrams;
+}
+
+function cropBrowserDiagramFromPage(questionNumber: number, page: BrowserRenderedPage, lines: ExtractedLine[]) {
+  const bounds = lines.map((line) => line.bounds).filter((item): item is NonNullable<ExtractedLine["bounds"]> => Boolean(item));
+  if (!bounds.length) return null;
+
+  const y0 = Math.max(0, Math.floor(Math.min(...bounds.map((item) => item.y0)) - 28));
+  const y1 = Math.min(page.height - 1, Math.ceil(Math.max(...bounds.map((item) => item.y1)) + 28));
+  const textBoxes = bounds.map((item) => ({
+    x0: Math.max(0, item.x0 - 10),
+    y0: Math.max(0, item.y0 - 8),
+    x1: Math.min(page.width - 1, item.x1 + 10),
+    y1: Math.min(page.height - 1, item.y1 + 8)
+  }));
+  const ink = findBrowserNonTextInkBounds(page, y0, y1, textBoxes);
+  if (!ink) return null;
+
+  const cropX = Math.max(0, ink.x0 - 20);
+  const cropY = Math.max(0, ink.y0 - 20);
+  const cropWidth = Math.min(page.width - cropX, ink.x1 - ink.x0 + 40);
+  const cropHeight = Math.min(page.height - cropY, ink.y1 - ink.y0 + 40);
+  if (cropWidth < 60 || cropHeight < 45) return null;
+
+  const scale = Math.min(1, 900 / cropWidth);
+  const outputWidth = Math.max(1, Math.round(cropWidth * scale));
+  const outputHeight = Math.max(1, Math.round(cropHeight * scale));
+  const canvas = window.document.createElement("canvas");
+  canvas.width = outputWidth;
+  canvas.height = outputHeight;
+  const context = canvas.getContext("2d");
+  if (!context) return null;
+  context.fillStyle = "white";
+  context.fillRect(0, 0, outputWidth, outputHeight);
+  context.drawImage(page.canvas, cropX, cropY, cropWidth, cropHeight, 0, 0, outputWidth, outputHeight);
+  const src = canvas.toDataURL("image/png");
+  if (src.length > 450_000) return null;
+
+  return {
+    id: `q${questionNumber}-diagram-p${page.pageNumber}`,
+    src,
+    alt: `Diagram for question ${questionNumber}`,
+    pageNumber: page.pageNumber,
+    width: outputWidth,
+    height: outputHeight
+  };
+}
+
+function findBrowserNonTextInkBounds(
+  page: BrowserRenderedPage,
+  y0: number,
+  y1: number,
+  textBoxes: Array<{ x0: number; y0: number; x1: number; y1: number }>
+) {
+  const step = 3;
+  let count = 0;
+  let x0 = page.width;
+  let yMin = page.height;
+  let x1 = 0;
+  let yMax = 0;
+
+  for (let y = y0; y <= y1; y += step) {
+    for (let x = 0; x < page.width; x += step) {
+      if (isInsideBrowserTextBox(x, y, textBoxes)) continue;
+      const index = (y * page.width + x) * 4;
+      if (!isBrowserDiagramInkPixel(page.image[index], page.image[index + 1], page.image[index + 2], page.image[index + 3])) continue;
+      count += 1;
+      x0 = Math.min(x0, x);
+      yMin = Math.min(yMin, y);
+      x1 = Math.max(x1, x);
+      yMax = Math.max(yMax, y);
+    }
+  }
+
+  const width = x1 - x0;
+  const height = yMax - yMin;
+  if (count < 90 || width < 70 || height < 42) return null;
+  return { x0, y0: yMin, x1, y1: yMax };
+}
+
+function isInsideBrowserTextBox(x: number, y: number, boxes: Array<{ x0: number; y0: number; x1: number; y1: number }>) {
+  return boxes.some((box) => x >= box.x0 && x <= box.x1 && y >= box.y0 && y <= box.y1);
+}
+
+function isBrowserDiagramInkPixel(red: number, green: number, blue: number, alpha: number) {
+  if (alpha < 25) return false;
+  const luminance = red * 0.299 + green * 0.587 + blue * 0.114;
+  const chroma = Math.max(red, green, blue) - Math.min(red, green, blue);
+  return luminance < 205 && (luminance < 165 || chroma > 35);
 }
 
 function usableQuestionCount(questions: ParsedQuestion[]) {
