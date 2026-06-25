@@ -17,8 +17,8 @@ export default function DashboardPage() {
     <ProtectedRoute>
       <AppShell>
         <PageHeader title={`Welcome${appUser?.name ? `, ${appUser.name}` : ""}`} description="Pick up where you left off, revise smarter, and turn every mock test into a clearer plan." />
-        <div className="grid gap-5 lg:grid-cols-[1fr_22rem]">
-          <div className="space-y-5">
+        <div className="grid min-w-0 gap-5 lg:grid-cols-[minmax(0,1fr)_22rem]">
+          <div className="min-w-0 space-y-5">
             <QuoteCard />
             <div className="grid gap-4 sm:grid-cols-2">
               <Card>
@@ -34,7 +34,7 @@ export default function DashboardPage() {
                 <Button className="mt-4" variant="secondary" asChild><Link href="/exam/setup">Setup exam</Link></Button>
               </Card>
             </div>
-            <section>
+            <section className="min-w-0">
               <h2 className="mb-3 font-bold">Recent uploaded PDFs</h2>
               <PdfList limit={3} />
             </section>

@@ -83,7 +83,7 @@ export function PdfList({ limit }: { limit?: number }) {
   }
 
   return (
-    <div>
+    <div className="min-w-0">
       <div className="hidden gap-3 md:grid">
         {items.map((pdf) => {
           const counts = countsFor(pdf);
@@ -114,19 +114,21 @@ export function PdfList({ limit }: { limit?: number }) {
           );
         })}
       </div>
-      <div className="grid gap-4 md:hidden">
+      <div className="grid min-w-0 gap-4 md:hidden">
         {items.map((pdf) => {
           const counts = countsFor(pdf);
           return (
-            <Card key={pdf.pdfId}>
-              <div className="flex items-start gap-3">
+            <Card key={pdf.pdfId} className="min-w-0 overflow-hidden p-4">
+              <div className="grid min-w-0 grid-cols-[2.75rem_minmax(0,1fr)] gap-3">
                 <div className="grid h-11 w-11 shrink-0 place-items-center rounded-lg bg-berry/10 text-berry">
                   <FileText className="h-5 w-5" />
                 </div>
                 <div className="min-w-0 flex-1">
-                  <h3 className="truncate font-semibold" title={pdf.fileName}>{pdf.fileName}</h3>
+                  <h3 className="line-clamp-2 break-words font-semibold leading-6" title={pdf.fileName}>{pdf.fileName}</h3>
                   <p className="mt-1 text-xs text-slate-500">{formatDate(pdf.uploadedAt)}</p>
                 </div>
+              </div>
+              <div className="mt-3 flex min-w-0 justify-start">
                 <StatusPill status={pdf.status} />
               </div>
               <div className="mt-4 grid grid-cols-3 gap-2 text-center text-xs">
@@ -135,7 +137,7 @@ export function PdfList({ limit }: { limit?: number }) {
                 <Metric label="Review" value={counts.review} />
               </div>
               <PdfMessage pdf={pdf} />
-              <div className="mt-5 grid grid-cols-2 gap-2">
+              <div className="mt-5 grid min-w-0 grid-cols-1 gap-2 min-[420px]:grid-cols-2">
                 <MobileActionButtons counts={counts} pdf={pdf} onRemove={() => remove(pdf)} onReprocess={() => reprocess(pdf)} />
               </div>
             </Card>
@@ -214,15 +216,15 @@ function MobileActionButtons({
 }) {
   return (
     <>
-      <Button variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><ExternalLink className="h-4 w-4" /> Open</Link></Button>
-      <Button asChild><Link href={`/study/${pdf.pdfId}`}><BookOpen className="h-4 w-4" /> Study</Link></Button>
+      <Button className="w-full min-w-0" variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><ExternalLink className="h-4 w-4" /> Open</Link></Button>
+      <Button className="w-full min-w-0" asChild><Link href={`/study/${pdf.pdfId}`}><BookOpen className="h-4 w-4" /> Study</Link></Button>
       {counts.ready > 0 ? (
-        <Button variant="secondary" asChild><Link href={`/exam/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Exam</Link></Button>
+        <Button className="w-full min-w-0" variant="secondary" asChild><Link href={`/exam/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Exam</Link></Button>
       ) : (
-        <Button variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Review</Link></Button>
+        <Button className="w-full min-w-0" variant="secondary" asChild><Link href={`/pdfs/${pdf.pdfId}`}><GraduationCap className="h-4 w-4" /> Review</Link></Button>
       )}
-      <Button variant="secondary" onClick={onReprocess}><RotateCw className="h-4 w-4" /> Retry</Button>
-      <Button className="col-span-2" variant="danger" onClick={onRemove}><Trash2 className="h-4 w-4" /> Delete PDF</Button>
+      <Button className="w-full min-w-0" variant="secondary" onClick={onReprocess}><RotateCw className="h-4 w-4" /> Retry</Button>
+      <Button className="w-full min-w-0 min-[420px]:col-span-2" variant="danger" onClick={onRemove}><Trash2 className="h-4 w-4" /> Delete PDF</Button>
     </>
   );
 }
@@ -239,7 +241,7 @@ function PdfMessage({ pdf }: { pdf: PdfFile }) {
 }
 
 function Metric({ label, value }: { label: string; value: number }) {
-  return <div className="rounded-lg bg-slate-50 p-2"><p className="font-bold text-ink">{value}</p><p className="text-slate-500">{label}</p></div>;
+  return <div className="min-w-0 rounded-lg bg-slate-50 p-2"><p className="font-bold text-ink">{value}</p><p className="truncate text-slate-500">{label}</p></div>;
 }
 
 function PdfSkeleton() {
