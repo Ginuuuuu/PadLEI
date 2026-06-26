@@ -61,6 +61,7 @@ export function ExamRunner({ allQuestions, settings }: { allQuestions: Question[
         selected,
         marked,
         settings,
+        displayOptionsByQuestion: optionOrderByQuestion,
         timeTaken: Math.round((Date.now() - startedAt) / 1000)
       })
     };

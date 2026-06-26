@@ -286,7 +286,7 @@ function cleanOptionMarker(text: string) {
 }
 
 function hasInlineAnswerMarker(text: string) {
-  return /(?:\[answer\]|\[correct\]|\[\s*x\s*\]|\(\s*x\s*\)|\bhighlighted\b|\u2713|\u2714|\u2705|\u2611|\u221a)/i.test(text);
+  return /(?:\[answer\]|\[correct\]|\[\s*x\s*\]|\(\s*x\s*\)|\bhighlighted\b|\u2713|\u2714|\u2705|\u2611|\u221a|\*)/i.test(text);
 }
 
 function cleanInlineMarkers(text: string) {

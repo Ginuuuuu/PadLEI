@@ -6,7 +6,7 @@ import { gradeFromPercentage } from "@/lib/exam";
 import { QuestionDiagrams } from "@/components/QuestionDiagrams";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import type { ExamResult } from "@/types/models";
+import type { ExamAnswer, ExamResult, Question } from "@/types/models";
 
 export function ResultView({ result }: { result: ExamResult }) {
   return (
@@ -38,6 +38,8 @@ export function ResultView({ result }: { result: ExamResult }) {
         {result.questions.map((question, index) => {
           const answer = result.answers.find((item) => item.questionId === question.id);
           const status = !answer?.selectedAnswer ? "Unattempted" : answer.isCorrect ? "Correct" : "Wrong";
+          const selectedDetail = getSelectedAnswerDetail(question, answer);
+          const correctDetail = getCorrectAnswerDetail(question, answer);
           return (
             <Card key={question.id}>
               <div className="flex flex-col gap-3 sm:flex-row sm:items-start sm:justify-between">
@@ -45,9 +47,13 @@ export function ResultView({ result }: { result: ExamResult }) {
                 <span className={`rounded-lg px-3 py-1 text-xs font-semibold ${status === "Correct" ? "bg-green-100 text-green-800" : status === "Wrong" ? "bg-red-100 text-red-800" : "bg-slate-100 text-slate-600"}`}>{status}</span>
               </div>
               <QuestionDiagrams question={question} className="mt-4" />
-              <div className="mt-3 grid gap-2 text-sm sm:grid-cols-2">
-                <p>Your answer: <b>{answer?.selectedAnswer || "Not answered"}</b></p>
-                <p>Correct answer: <b>{question.correctAnswer}</b></p>
+              <div className="mt-4 grid gap-3 sm:grid-cols-2">
+                <AnswerReview
+                  title="Your answer"
+                  detail={selectedDetail}
+                  tone={!answer?.selectedAnswer ? "neutral" : answer.isCorrect ? "correct" : "wrong"}
+                />
+                <AnswerReview title="Correct answer" detail={correctDetail} tone="correct" />
               </div>
               {question.explanation ? <p className="mt-3 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">{question.explanation}</p> : null}
             </Card>
@@ -60,4 +66,59 @@ export function ResultView({ result }: { result: ExamResult }) {
 
 function Metric({ label, value }: { label: string; value: string | number }) {
   return <Card><p className="text-2xl font-bold">{value}</p><p className="text-sm text-slate-500">{label}</p></Card>;
+}
+
+type AnswerDetail = {
+  label: string;
+  text: string;
+  empty?: boolean;
+};
+
+type AnswerTone = "correct" | "wrong" | "neutral";
+
+function AnswerReview({ title, detail, tone }: { title: string; detail: AnswerDetail; tone: AnswerTone }) {
+  const toneClass = {
+    correct: "border-green-100 bg-green-50",
+    wrong: "border-red-100 bg-red-50",
+    neutral: "border-slate-200 bg-slate-50"
+  }[tone];
+  const labelClass = {
+    correct: "text-green-800",
+    wrong: "text-red-800",
+    neutral: "text-slate-700"
+  }[tone];
+
+  return (
+    <div className={`min-w-0 rounded-lg border p-3 ${toneClass}`}>
+      <p className="text-xs font-semibold text-slate-500">{title}</p>
+      <p className={`mt-1 break-words text-sm font-bold ${labelClass}`}>{detail.label}</p>
+      {detail.text ? <p className="mt-1 break-words text-sm leading-6 text-slate-700">{detail.text}</p> : null}
+      {!detail.text && !detail.empty ? <p className="mt-1 text-sm text-slate-500">Answer text unavailable</p> : null}
+    </div>
+  );
+}
+
+function getSelectedAnswerDetail(question: Question, answer?: ExamAnswer): AnswerDetail {
+  if (!answer?.selectedAnswer) {
+    return { label: "Not answered", text: "", empty: true };
+  }
+
+  return {
+    label: answer.selectedDisplayAnswer || answer.selectedAnswer,
+    text: answer.selectedAnswerText || optionText(question, answer.selectedAnswer)
+  };
+}
+
+function getCorrectAnswerDetail(question: Question, answer?: ExamAnswer): AnswerDetail {
+  const correctAnswer = answer?.correctAnswer || question.correctAnswer || "";
+
+  return {
+    label: answer?.correctDisplayAnswer || correctAnswer || "Missing",
+    text: answer?.correctAnswerText || optionText(question, correctAnswer)
+  };
+}
+
+function optionText(question: Question, optionKey: string) {
+  if (!optionKey) return "";
+  return question.options?.[optionKey as keyof Question["options"]]?.trim() || "";
 }

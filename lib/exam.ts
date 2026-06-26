@@ -2,6 +2,12 @@ import type { ExamAnswer, ExamResult, ExamSettings, Question } from "@/types/mod
 import { isReadyQuestion } from "@/lib/question-options";
 import { shuffle } from "@/lib/utils";
 
+type DisplayOptionSnapshot = {
+  displayKey: string;
+  optionKey: string;
+  text: string;
+};
+
 export function buildExamQuestions(questions: Question[], settings: ExamSettings) {
   const inRange = questions
     .filter((question) => question.questionNumber >= settings.fromQuestion && question.questionNumber <= settings.toQuestion)
@@ -18,13 +24,22 @@ export function scoreExam(params: {
   marked: Record<string, boolean>;
   settings: ExamSettings;
   timeTaken: number;
+  displayOptionsByQuestion?: Record<string, DisplayOptionSnapshot[]>;
 }): Omit<ExamResult, "resultId" | "date"> {
   const answers: ExamAnswer[] = params.questions.map((question) => {
     const selectedAnswer = params.selected[question.id] || "";
+    const displayOptions = params.displayOptionsByQuestion?.[question.id] || [];
+    const selectedDisplayOption = displayOptions.find((option) => option.optionKey === selectedAnswer);
+    const correctDisplayOption = displayOptions.find((option) => option.optionKey === question.correctAnswer);
+
     return {
       questionId: question.id,
       selectedAnswer,
+      selectedDisplayAnswer: selectedDisplayOption?.displayKey || selectedAnswer,
+      selectedAnswerText: selectedDisplayOption?.text || optionText(question, selectedAnswer),
       correctAnswer: question.correctAnswer,
+      correctDisplayAnswer: correctDisplayOption?.displayKey || question.correctAnswer,
+      correctAnswerText: correctDisplayOption?.text || optionText(question, question.correctAnswer),
       isCorrect: selectedAnswer === question.correctAnswer,
       markedForReview: Boolean(params.marked[question.id])
     };
@@ -61,4 +76,9 @@ export function gradeFromPercentage(percentage: number) {
   if (percentage >= 70) return "Strong";
   if (percentage >= 50) return "Improving";
   return "Needs revision";
+}
+
+function optionText(question: Question, optionKey: string) {
+  if (!optionKey) return "";
+  return question.options?.[optionKey as keyof Question["options"]]?.trim() || "";
 }

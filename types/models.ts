@@ -100,7 +100,11 @@ export type ExamSettings = {
 export type ExamAnswer = {
   questionId: string;
   selectedAnswer: string;
+  selectedDisplayAnswer?: string;
+  selectedAnswerText?: string;
   correctAnswer: string;
+  correctDisplayAnswer?: string;
+  correctAnswerText?: string;
   isCorrect: boolean;
   markedForReview: boolean;
 };
