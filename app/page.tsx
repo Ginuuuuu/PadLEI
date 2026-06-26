@@ -1,6 +1,6 @@
 "use client";
 
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
 import { GraduationCap, Mail, X } from "lucide-react";
 import toast from "react-hot-toast";
@@ -21,6 +21,11 @@ export default function LoginPage() {
   const [loginError, setLoginError] = useState("");
   const [requestOpen, setRequestOpen] = useState(false);
   const [requestBusy, setRequestBusy] = useState(false);
+  const [nativeMobileApp, setNativeMobileApp] = useState(false);
+
+  useEffect(() => {
+    setNativeMobileApp(window.navigator.userAgent.includes("PadLEIAndroid") || window.navigator.userAgent.includes("PadLEIiOS"));
+  }, []);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -96,9 +101,15 @@ export default function LoginPage() {
           <h1 className="mt-4 text-2xl font-bold">PadLEI</h1>
           <p className="mt-2 text-sm text-slate-600">Approved students can study PDFs, practice MCQs, and track exam progress.</p>
         </div>
-        <Button className="mt-6 w-full" variant="secondary" disabled={googleBusy || emailBusy} onClick={google}>
-          <GoogleIcon /> {googleBusy ? "Opening Google..." : "Continue with Google"}
-        </Button>
+        {nativeMobileApp ? (
+          <div className="mt-6 rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+            Use email and password to log in from the mobile app.
+          </div>
+        ) : (
+          <Button className="mt-6 w-full" variant="secondary" disabled={googleBusy || emailBusy} onClick={google}>
+            <GoogleIcon /> {googleBusy ? "Opening Google..." : "Continue with Google"}
+          </Button>
+        )}
         <form className="mt-4 space-y-3" onSubmit={submit}>
           <Input type="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} required />
           <Input type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} required />

@@ -8,3 +8,14 @@ coverage
 firebase-debug.log
 *-firebase-adminsdk-*.json
 serviceAccount*.json
+android/.gradle
+android/build
+android/app/build
+android/local.properties
+android/*.jks
+android/*.keystore
+ios/**/DerivedData
+ios/**/*.xcuserstate
+ios/**/*.xcuserdata
+ios/**/build
+README.md

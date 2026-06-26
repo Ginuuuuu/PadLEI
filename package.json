@@ -10,7 +10,9 @@
     "build": "next build",
     "start": "next start",
     "lint": "next lint",
-    "typecheck": "tsc --noEmit"
+    "typecheck": "tsc --noEmit",
+    "apk:debug": "node scripts/build-apk.mjs debug",
+    "apk:release": "node scripts/build-apk.mjs release"
   },
   "dependencies": {
     "@napi-rs/canvas": "^0.1.100",
