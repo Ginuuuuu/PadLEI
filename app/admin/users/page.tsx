@@ -2,7 +2,7 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { collection, deleteDoc, doc, onSnapshot, setDoc, updateDoc, writeBatch } from "firebase/firestore";
-import { Trash2 } from "lucide-react";
+import { Copy, KeyRound, Link as LinkIcon, Trash2, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
@@ -19,7 +19,7 @@ export default function AdminUsersPage() {
   const { appUser } = useAuth();
   const [users, setUsers] = useState<AppUser[]>([]);
   const [approvals, setApprovals] = useState<UserApproval[]>([]);
-  const [temporaryPassword, setTemporaryPassword] = useState<{ email: string; password: string } | null>(null);
+  const [oneTimeCredential, setOneTimeCredential] = useState<{ email: string; value: string; kind: "link" | "password" } | null>(null);
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
@@ -36,7 +36,6 @@ export default function AdminUsersPage() {
     const form = new FormData(event.currentTarget);
     const email = String(form.get("email") || "").toLowerCase().trim();
     const role = String(form.get("role") || "user") as UserRole;
-    const password = String(form.get("password") || "").trim();
     if (!email) return;
     setBusy(true);
 
@@ -49,11 +48,11 @@ export default function AdminUsersPage() {
           "Content-Type": "application/json",
           Authorization: `Bearer ${token}`
         },
-        body: JSON.stringify({ email, role, password: password || undefined })
+        body: JSON.stringify({ email, role, name: String(form.get("name") || "").trim() })
       });
-      const payload = (await response.json()) as { error?: string; temporaryPassword?: string; email?: string };
+      const payload = (await response.json()) as { error?: string; resetLink?: string; email?: string };
       if (!response.ok) throw new Error(payload.error || "Could not create user.");
-      setTemporaryPassword({ email: payload.email || email, password: payload.temporaryPassword || password });
+      if (payload.resetLink) setOneTimeCredential({ email: payload.email || email, value: payload.resetLink, kind: "link" });
       event.currentTarget.reset();
       toast.success("Firebase Auth user created and approved.");
     } catch (error) {
@@ -77,10 +76,30 @@ export default function AdminUsersPage() {
   }
 
   async function removeUser(user: AppUser) {
+    if (!window.confirm(`Remove approval for ${user.email}? Academic records will not be deleted.`)) return;
     const batch = writeBatch(db);
     batch.delete(doc(db, "users", user.uid));
     batch.delete(doc(db, "approvals", user.email));
     await batch.commit();
+  }
+
+  async function passwordAction(user: AppUser, action: "resetLink" | "temporaryPassword") {
+    try {
+      const token = await auth.currentUser?.getIdToken();
+      if (!token) throw new Error("Admin login required.");
+      const response = await fetch("/api/admin/password-action", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
+        body: JSON.stringify({ email: user.email, action })
+      });
+      const payload = (await response.json()) as { error?: string; resetLink?: string; temporaryPassword?: string };
+      if (!response.ok) throw new Error(payload.error || "Password action failed.");
+      const value = payload.resetLink || payload.temporaryPassword;
+      if (!value) throw new Error("No credential was returned.");
+      setOneTimeCredential({ email: user.email, value, kind: payload.resetLink ? "link" : "password" });
+    } catch (error) {
+      toast.error(error instanceof Error ? error.message : "Password action failed.");
+    }
   }
 
   const realUsers = users
@@ -95,19 +114,12 @@ export default function AdminUsersPage() {
         <PageHeader title="Admin Users" description="Add an email here to create the Firebase Authentication account and approve platform access in one step." />
         <Card>
           <div className="mb-4 rounded-lg bg-green-50 p-3 text-sm text-green-900">
-            This creates the login account automatically. Leave password blank to generate a temporary password.
+            This creates the login account and a secure Firebase password setup link. Existing passwords are never visible or replaced.
           </div>
-          {temporaryPassword ? (
-            <div className="mb-4 rounded-lg border border-aqua/30 bg-aqua/10 p-3 text-sm text-ink">
-              <p className="font-semibold">Temporary login for {temporaryPassword.email}</p>
-              <p className="mt-1 font-mono text-base">{temporaryPassword.password}</p>
-              <p className="mt-1 text-xs text-slate-600">Share this password with the user. They can change it later in Firebase/Auth flow.</p>
-            </div>
-          ) : null}
-          <form className="grid gap-3 lg:grid-cols-[1fr_12rem_14rem_auto]" onSubmit={add}>
+          <form className="grid gap-3 lg:grid-cols-[1fr_1fr_12rem_auto]" onSubmit={add}>
+            <Input name="name" placeholder="Student name" maxLength={100} />
             <Input name="email" type="email" placeholder="student@example.com" required />
             <Select name="role" defaultValue="user"><option value="user">User</option><option value="admin">Admin</option></Select>
-            <Input name="password" type="text" placeholder="Password or auto-generate" minLength={6} />
             <Button disabled={busy}>{busy ? "Creating..." : "Create user"}</Button>
           </form>
         </Card>
@@ -116,7 +128,7 @@ export default function AdminUsersPage() {
             <Card key={user.uid} className="flex flex-wrap items-center justify-between gap-3">
               <div>
                 <p className="font-semibold">{user.email}</p>
-                <p className="text-sm text-slate-500">{user.uid}</p>
+                <p className="text-sm text-slate-500">{user.name || "No profile name"}</p>
               </div>
               <div className="flex items-center gap-2">
                 <Select value={user.role} onChange={(event) => updateRole(user, event.target.value as UserRole)}>
@@ -125,6 +137,16 @@ export default function AdminUsersPage() {
                 </Select>
                 <Button variant={user.approved ? "secondary" : "primary"} onClick={() => toggleApproval(user)}>
                   {user.approved ? "Approved" : "Approve"}
+                </Button>
+                <Button variant="secondary" onClick={() => void passwordAction(user, "resetLink")} title="Generate password reset link">
+                  <LinkIcon className="h-4 w-4" /> Reset
+                </Button>
+                <Button variant="ghost" onClick={() => {
+                  if (window.confirm("Generate an emergency temporary password and sign this user out of existing sessions?")) {
+                    void passwordAction(user, "temporaryPassword");
+                  }
+                }} title="Generate emergency temporary password">
+                  <KeyRound className="h-4 w-4" />
                 </Button>
                 <Button variant="ghost" onClick={() => removeUser(user)}><Trash2 className="h-4 w-4 text-red-600" /></Button>
               </div>
@@ -147,6 +169,26 @@ export default function AdminUsersPage() {
             </Card>
           ))}
         </div>
+        {oneTimeCredential ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-ink/60 px-4 py-6" role="dialog" aria-modal="true">
+            <Card className="w-full max-w-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 className="text-lg font-bold">One-time {oneTimeCredential.kind === "link" ? "password setup link" : "temporary password"}</h2>
+                  <p className="mt-1 text-sm text-slate-500">Share this now with {oneTimeCredential.email}. It disappears when this window closes.</p>
+                </div>
+                <Button className="h-11 w-11 px-0" variant="ghost" onClick={() => setOneTimeCredential(null)} aria-label="Close">
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              <p className="mt-4 break-all rounded-lg bg-slate-50 p-3 font-mono text-sm">{oneTimeCredential.value}</p>
+              <Button className="mt-4 w-full" onClick={() => {
+                void navigator.clipboard.writeText(oneTimeCredential.value);
+                toast.success("Copied");
+              }}><Copy className="h-4 w-4" /> Copy</Button>
+            </Card>
+          </div>
+        ) : null}
       </AppShell>
     </ProtectedRoute>
   );

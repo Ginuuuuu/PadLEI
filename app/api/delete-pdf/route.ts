@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { deletePdfFile } from "@/lib/server-pdf-storage";
+import { requireApprovedUser, safeApiError } from "@/lib/server-auth";
 import type { PdfFile } from "@/types/models";
 
 export const runtime = "nodejs";
@@ -9,27 +10,17 @@ export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
-    if (!token) return NextResponse.json({ error: "Login required." }, { status: 401 });
-
-    const decoded = await adminAuth.verifyIdToken(token);
+    const { appUser, ownerId } = await requireApprovedUser(request);
     const body = (await request.json()) as { pdfId?: string };
     const pdfId = String(body.pdfId || "");
     if (!pdfId) return NextResponse.json({ error: "PDF id is required." }, { status: 400 });
-
-    const userDoc = await adminDb.collection("users").doc(decoded.uid).get();
-    const user = userDoc.data();
-    if (!userDoc.exists || user?.approved !== true) {
-      return NextResponse.json({ error: "Approved user access required." }, { status: 403 });
-    }
 
     const pdfRef = adminDb.collection("pdfs").doc(pdfId);
     const pdfDoc = await pdfRef.get();
     if (!pdfDoc.exists) return NextResponse.json({ ok: true });
 
     const pdf = pdfDoc.data() as PdfFile;
-    const isAdmin = user.role === "admin";
-    if (!isAdmin && pdf.userId !== decoded.uid) {
+    if (appUser.role !== "admin" && pdf.userId !== ownerId) {
       return NextResponse.json({ error: "You cannot delete this PDF." }, { status: 403 });
     }
 
@@ -43,6 +34,7 @@ export async function POST(request: Request) {
 
     return NextResponse.json({ ok: true });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Delete failed." }, { status: 500 });
+    const safe = safeApiError(error, "Delete failed.");
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }

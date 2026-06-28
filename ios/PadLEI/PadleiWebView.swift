@@ -17,12 +17,13 @@ struct PadleiWebView: UIViewRepresentable {
         configuration.defaultWebpagePreferences = preferences
         configuration.websiteDataStore = .default()
         configuration.allowsInlineMediaPlayback = true
+        configuration.userContentController.add(context.coordinator, name: "padleiDownload")
 
         let webView = WKWebView(frame: .zero, configuration: configuration)
         webView.navigationDelegate = context.coordinator
         webView.uiDelegate = context.coordinator
         webView.allowsBackForwardNavigationGestures = true
-        webView.customUserAgent = "PadLEIiOS"
+        webView.configuration.applicationNameForUserAgent = "PadLEIiOS"
         webView.scrollView.contentInsetAdjustmentBehavior = .automatic
         webView.load(URLRequest(url: startURL))
 
@@ -31,11 +32,43 @@ struct PadleiWebView: UIViewRepresentable {
 
     func updateUIView(_ webView: WKWebView, context: Context) {}
 
-    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate {
+    final class Coordinator: NSObject, WKNavigationDelegate, WKUIDelegate, WKScriptMessageHandler {
         private let appHost: String
 
         init(startURL: URL) {
             self.appHost = startURL.host ?? ""
+        }
+
+        func userContentController(_ userContentController: WKUserContentController, didReceive message: WKScriptMessage) {
+            guard message.name == "padleiDownload",
+                  let payload = message.body as? [String: String],
+                  let base64 = payload["base64"],
+                  let data = Data(base64Encoded: base64),
+                  let fileName = payload["fileName"] else {
+                return
+            }
+
+            let safeName = fileName.replacingOccurrences(of: "/", with: "_")
+            let fileURL = FileManager.default.temporaryDirectory.appendingPathComponent(safeName)
+            do {
+                try data.write(to: fileURL, options: .atomic)
+                DispatchQueue.main.async {
+                    let controller = UIActivityViewController(activityItems: [fileURL], applicationActivities: nil)
+                    guard let root = UIApplication.shared.connectedScenes
+                        .compactMap({ ($0 as? UIWindowScene)?.keyWindow })
+                        .first?.rootViewController else {
+                        return
+                    }
+                    var presenter = root
+                    while let presented = presenter.presentedViewController {
+                        presenter = presented
+                    }
+                    controller.popoverPresentationController?.sourceView = presenter.view
+                    presenter.present(controller, animated: true)
+                }
+            } catch {
+                return
+            }
         }
 
         func webView(

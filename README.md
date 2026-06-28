@@ -1,283 +1,160 @@
-# 📚 PadLEI
+# PadLEI
 
-<div align="center">
+PadLEI is a production-style medical study workspace built with Next.js, Firebase, Cloudinary, and native Android/iOS WebView wrappers. It converts MCQ PDFs into structured questions, preserves diagrams, supports study and mock-test workflows, organizes academic material, and tracks actual AVN performance.
 
-### Client-Based Educational Technology Project
+Live website: https://avn-study.vercel.app
 
-### Smart AVN Study & Mock Test Platform
+## Features
 
-Transforming Medical Exam Preparation Through OCR-Powered Learning
+- Secure Google and email/password authentication for approved users
+- Password-free public access requests with WhatsApp or email notification
+- Canonical academic owner identity so one approved email keeps the same data across devices and providers
+- Cloudinary PDF storage, browser/server extraction, OCR fallback, diagrams, manual question correction, and default PDFs
+- Study progress, learned questions, bookmarks, weak questions, shuffled choices, and mock-test result review
+- Semester/subject PDF Library with custom catalog entries and move-in-place organization
+- Exam timetable with status controls and in-app 7/3/1/0-day reminders
+- Actual AVN score tracker with automatic percentage and pass/fail calculation
+- Mock-versus-actual subject comparison and accessible trend summaries
+- Separate A4 PDF reports for mock tests, actual AVNs, selected AVNs, subjects, semesters, and overall performance
+- Profile, signed Cloudinary profile photos, bio, academic preferences, light/dark/system themes, and quote controls
+- PWA plus Android and iOS wrappers with persistent login, file upload, external links, and report downloads
 
-🌐 **Live Demo:** https://avn-study.vercel.app/
+## Architecture
 
-</div>
+- `app/`: Next.js App Router pages and protected API routes
+- `components/`: responsive UI, study/exam flows, Library, Academics, reports, and Settings
+- `lib/account.ts`: normalized email and canonical owner helpers
+- `lib/server-auth.ts`: Firebase ID-token, approval, role, and owner verification
+- `app/api/account/sync/route.ts`: login-time canonical account synchronization
+- `lib/academic.ts`: validation, percentage, summary, timetable, and reminder utilities
+- `firestore.rules`: canonical owner and administrator access rules
+- `firestore.indexes.json`: indexes for library and academic queries
+- `android/` and `ios/`: native persistent WebView wrappers
 
----
+All academic records store the canonical owner in their existing `userId` field. The current Firebase Authentication UID remains in `users.uid`; `users.ownerId` is stable.
 
-# 📖 Overview
+## Environment
 
-PadLEI is a client-based educational technology platform developed to solve a real-world academic challenge faced by medical students preparing for AVN (Semester Examinations).
+Create `.env.local` from `.env.example`.
 
-The project was commissioned by a medical student studying at Osh State University, Kyrgyzstan, who needed a better way to study large MCQ question banks distributed as PDFs. Each subject contained approximately 700–1000 questions, making traditional PDF-based revision inefficient, time-consuming, and difficult to manage.
+```text
+NEXT_PUBLIC_FIREBASE_API_KEY=
+NEXT_PUBLIC_FIREBASE_AUTH_DOMAIN=
+NEXT_PUBLIC_FIREBASE_PROJECT_ID=
+NEXT_PUBLIC_FIREBASE_STORAGE_BUCKET=
+NEXT_PUBLIC_FIREBASE_MESSAGING_SENDER_ID=
+NEXT_PUBLIC_FIREBASE_APP_ID=
+NEXT_PUBLIC_BOOTSTRAP_ADMIN_EMAIL=
 
-To address this challenge, PadLEI was designed and developed as a complete study ecosystem that transforms static PDFs into an interactive learning platform. Using OCR technology, the system extracts questions and answers, organizes study material, generates mock tests, tracks learning progress, and helps students prepare more effectively for examinations.
+FIREBASE_ADMIN_PROJECT_ID=
+FIREBASE_ADMIN_CLIENT_EMAIL=
+FIREBASE_ADMIN_PRIVATE_KEY=
+FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH=
 
-This project demonstrates how technology can be used to identify a genuine problem, streamline the learning process, and create measurable academic value for real users. What began as a solution for a single client has since expanded to support multiple students using the platform for their examination preparation.
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+```
 
----
+Use the three Firebase Admin values on Vercel. `FIREBASE_ADMIN_SERVICE_ACCOUNT_PATH` is intended for local development only. Never expose Admin or Cloudinary secrets through `NEXT_PUBLIC_*`.
 
-# 🚀 Problem Statement
+Cloudinary PDF and profile-image uploads share the same account credentials. Profile images use the protected path `padlei/users/{ownerId}/profile`, allow JPG/PNG/WebP, and are limited to 2 MB.
 
-Medical students preparing for AVN examinations often face significant challenges:
+## Authentication
 
-* Large PDF question banks
-* 700–1000+ MCQs per subject
-* Difficult and repetitive revision process
-* Lack of structured study resources
-* No centralized progress tracking
-* No effective mock test environment
-* Time-consuming manual study workflow
+1. A student requests access with name, email, and contact method only.
+2. Admin approval creates or enables the Firebase Auth user and returns a password setup/reset link once.
+3. No current password or reset link is stored in Firestore.
+4. Emergency temporary passwords are returned once, revoke refresh tokens, and set `mustChangePassword`.
+5. Password users reauthenticate before changing their password in Settings.
+6. Google-only users can request a Firebase password setup email.
 
-Traditional PDF-based learning methods make it difficult for students to revise efficiently and monitor their preparation progress.
+The account sync endpoint verifies the ID token, resolves approved records by normalized email, assigns a stable owner, migrates legacy records idempotently, and records completion in `accountMigrations`.
 
-PadLEI bridges the gap between static study materials and modern digital learning.
+## Firestore Data
 
----
+Primary collections:
 
-# ✨ Core Features
+- `users`, `approvals`, `loginRequests`, `accountMigrations`
+- `pdfs`, `questions`, `progress`, `examResults`
+- `semesters`, `subjects`
+- `examTimetable`, `actualExamScores`
+- `quotes`, `userPreferences`
 
-## 📄 OCR-Based PDF Processing
+Existing PDFs without organization fields are assigned to `Uncategorized / General`. Moving a PDF changes only its semester/subject metadata; the PDF ID, questions, progress, bookmarks, results, and URL remain unchanged.
 
-Upload MCQ PDFs and automatically extract:
+See [docs/complete-upgrade-architecture.md](docs/complete-upgrade-architecture.md) for field details, calculations, routes, and security boundaries.
 
-* Questions
-* Answers
-* Options
-* Subject-wise content
+## Migration
 
-The system uses OCR technology to process scanned and image-based PDF documents.
+The migration is dry-run by default:
 
----
+```powershell
+npm run migrate:accounts
+```
 
-## 📚 Smart Study Mode
+Review the counts. To apply:
 
-Designed specifically for efficient learning and long-term retention.
+```powershell
+$env:PADLEI_ALLOW_MIGRATION="true"
+npm run migrate:accounts -- --apply
+```
 
-Features include:
+Precautions:
 
-* Clean reading interface
-* Question-by-question study
-* Answer reveal functionality
-* Comfortable revision workflow
-* Mobile-friendly experience
-* Organized learning structure
+- Back up Firestore first.
+- Run the dry-run against the intended Firebase project.
+- The migration does not delete legacy academic records.
+- Progress is copied/merged into canonical `{ownerId}_{pdfId}` documents.
+- Password fields are deleted from legacy login requests.
+- The command is safe to rerun and records successful owner migrations.
 
----
+## Firebase Deployment
 
-## 📝 Mock Test System
+Install the Firebase CLI and authenticate, then deploy:
 
-Students can evaluate their preparation through:
+```powershell
+firebase use <project-id>
+firebase deploy --only firestore:rules,firestore:indexes,storage
+```
 
-* Timed examinations
-* Randomized questions
-* Real exam simulation
-* Instant scoring
-* Detailed performance review
-* Accuracy calculation
+Verify Authentication authorized domains for the production site and local development host. Enable Google and email/password providers as required.
 
----
+## Reports
 
-## 📊 Progress Tracking Dashboard
+Reports are generated locally with `@react-pdf/renderer`; student data is not sent to an unknown report service. Reports always use a light A4 print theme, page numbers, generated time, readable tables, wrapped content, and fallback profile initials.
 
-Monitor learning progress through:
+Android reports save to `Downloads/PadLEI`. iOS reports open the native share/save sheet. Browser and PWA builds use the normal download flow.
 
-* Questions Studied
-* Questions Remaining
-* Mock Test Scores
-* Accuracy Percentage
-* Study Statistics
-* Learning Trends
-* Performance History
+## PWA and Native Wrappers
 
----
+`public/sw.js` caches only the offline shell and static assets. It does not cache authenticated API responses, private reports, profile data, admin pages, or academic records.
 
-## ⚠️ Extraction Quality Verification
+Android uses DOM storage, persistent cookies/storage, file chooser support, Download Manager, external WhatsApp/email handling, and a native base64 report bridge.
 
-OCR is powerful but not always perfect.
+iOS uses `WKWebsiteDataStore.default()`, file chooser support, external links, back/forward gestures, and a native report share bridge. Build iOS on macOS with Xcode; iOS does not use APK files.
 
-PadLEI automatically identifies:
+## Development
 
-* Missing questions
-* Partial extractions
-* Incorrect formatting
-* OCR failures
-* Unrecognized content
+```powershell
+npm install
+npm run dev
+```
 
-The platform reports extraction quality and highlights problematic entries.
+The local app runs on `http://localhost:3001`.
 
----
+Verification:
 
-## ✍️ Manual Question Management
+```powershell
+npm run typecheck
+npm run build
+```
 
-Users can:
+Android:
 
-* Add questions manually
-* Edit extracted content
-* Correct OCR mistakes
-* Update answers
-* Improve extraction accuracy
-* Maintain question quality
+```powershell
+npm run apk:debug
+npm run apk:release
+```
 
-This ensures that students always have complete and reliable study material.
-
----
-
-## 🔐 Secure Authentication
-
-Features include:
-
-* User Registration
-* Login System
-* Personalized Study Records
-* Individual Progress Tracking
-* Secure User Access
-
----
-
-## 🛠️ Admin Dashboard
-
-Administrative capabilities include:
-
-* User Monitoring
-* Content Management
-* Question Database Control
-* Analytics Overview
-* Platform Maintenance
-* Learning Resource Management
-
----
-
-# 💻 Tech Stack
-
-![Next.js](https://img.shields.io/badge/NEXT.JS-000000?style=for-the-badge\&logo=nextdotjs\&logoColor=white)
-![JavaScript](https://img.shields.io/badge/JAVASCRIPT-F7DF1E?style=for-the-badge\&logo=javascript\&logoColor=black)
-![Firebase](https://img.shields.io/badge/FIREBASE-FFCA28?style=for-the-badge\&logo=firebase\&logoColor=black)
-![Firestore](https://img.shields.io/badge/FIRESTORE-FFCA28?style=for-the-badge\&logo=firebase\&logoColor=black)
-![Firebase Auth](https://img.shields.io/badge/FIREBASE_AUTH-FFCA28?style=for-the-badge\&logo=firebase\&logoColor=black)
-![OCR](https://img.shields.io/badge/OCR-4285F4?style=for-the-badge)
-![PDF Processing](https://img.shields.io/badge/PDF_PROCESSING-E34F26?style=for-the-badge)
-![Tailwind CSS](https://img.shields.io/badge/TAILWINDCSS-06B6D4?style=for-the-badge\&logo=tailwindcss\&logoColor=white)
-![Git](https://img.shields.io/badge/GIT-F05032?style=for-the-badge\&logo=git\&logoColor=white)
-![GitHub](https://img.shields.io/badge/GITHUB-181717?style=for-the-badge\&logo=github\&logoColor=white)
-![Vercel](https://img.shields.io/badge/VERCEL-000000?style=for-the-badge\&logo=vercel\&logoColor=white)
-
----
-
-# 🎯 Key Benefits
-
-✅ Converts large PDF question banks into structured study material
-
-✅ Reduces study preparation and revision time
-
-✅ Enables efficient learning through organized content
-
-✅ Provides measurable progress tracking
-
-✅ Supports both automated and manual question management
-
-✅ Helps students identify weak areas
-
-✅ Improves examination readiness
-
-✅ Creates a personalized learning experience
-
----
-
-# 📈 Real-World Impact
-
-PadLEI was built to solve an actual problem experienced by medical students rather than as a theoretical or academic project.
-
-### Challenge
-
-* 700–1000+ MCQs per subject
-* Time-consuming PDF revision
-* No progress tracking
-* No structured study workflow
-* Difficult exam preparation
-
-### Solution
-
-PadLEI converts static question-bank PDFs into a dynamic learning platform that allows students to:
-
-* Study efficiently
-* Practice through mock examinations
-* Monitor academic progress
-* Identify weak areas
-* Correct extraction errors
-* Build personalized study resources
-
-### Outcome
-
-The platform successfully transformed a manual and repetitive study process into a structured digital learning experience.
-
-Beyond the original client, additional students have adopted the platform for their own AVN preparation, demonstrating the practical value and scalability of the solution.
-
-This project showcases the application of software engineering to solve a real educational problem through technology.
-
----
-
-# 🔮 Future Enhancements
-
-* AI-generated explanations
-* Subject-wise performance analytics
-* Flashcard generation
-* Study groups and collaboration
-* Mobile application
-* Multi-language OCR support
-* AI-powered revision recommendations
-* Advanced learning insights
-
----
-
-# 🛡️ Project Highlights
-
-* Client-Based Software Development
-* Real-World Problem Solving
-* OCR-Based PDF Analysis
-* Automated Question Extraction
-* Smart Error Detection
-* Manual Correction System
-* Personalized Learning Dashboard
-* Mock Test Engine
-* Performance Analytics
-* Firebase-Powered Backend
-* Fully Responsive Design
-* Scalable Educational Platform
-
----
-
-# 🌍 Deployment
-
-**Live Website:** https://avn-study.vercel.app/
-
-Hosted on Vercel for fast, secure, and scalable deployment.
-
----
-
-# 👨‍💻 Developed By
-
-**Reshin Ginu**
-
-Full Stack Developer
-
-Designed and developed PadLEI to help medical students transform large MCQ question banks into a structured, interactive learning experience.
-
----
-
-<div align="center">
-
-### Built with ❤️ to Solve Real Educational Challenges
-
-**PadLEI — Learn Better. Practice Smarter. Perform Stronger.**
-
-</div>
+Additional platform guides are in `docs/`.

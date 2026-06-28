@@ -1,14 +1,19 @@
+.env
 .env.local
 .env*.local
-.next
-node_modules
+.next/
+node_modules/
+.npm-cache/
+tmp/
+*.log
+tsconfig.tsbuildinfo
 data
 dist
 coverage
 firebase-debug.log
 *-firebase-adminsdk-*.json
 serviceAccount*.json
-android/.gradle
+android/.gradle/
 android/build
 android/app/build
 android/local.properties
@@ -18,4 +23,3 @@ ios/**/DerivedData
 ios/**/*.xcuserstate
 ios/**/*.xcuserdata
 ios/**/build
-README.md

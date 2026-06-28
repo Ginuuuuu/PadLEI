@@ -7,6 +7,9 @@ import { auth } from "@/lib/firebase";
 import { parseMcqLines, parseMcqText, sanitizeText, type ExtractedLine, type ParsedQuestion } from "@/lib/extraction";
 import { useAuth } from "@/components/AuthProvider";
 import { Card } from "@/components/ui/card";
+import { Input, Select } from "@/components/ui/input";
+import { medicalSubjectPresets } from "@/lib/academic";
+import { useAcademicCatalog } from "@/lib/use-academic-catalog";
 
 const maxSizeMb = 20;
 const vercelSafeFallbackMb = 4;
@@ -89,8 +92,11 @@ async function readPayload<T extends { error?: string }>(response: Response): Pr
 
 export function PdfUploader() {
   const { appUser } = useAuth();
+  const { semesters, subjects, addSubject } = useAcademicCatalog();
   const [busy, setBusy] = useState(false);
   const [stage, setStage] = useState<"idle" | "uploading" | "extracting">("idle");
+  const [semesterId, setSemesterId] = useState("uncategorized");
+  const [subjectName, setSubjectName] = useState("General");
 
   async function handleUpload(file?: File) {
     if (!file || !appUser) return;
@@ -101,6 +107,13 @@ export function PdfUploader() {
     setBusy(true);
 
     try {
+      const semester = semesters.find((item) => item.semesterId === semesterId);
+      if (!semester) throw new Error("Choose a valid semester.");
+      const subject = await addSubject(
+        semester,
+        subjectName,
+        !medicalSubjectPresets.includes(subjectName as typeof medicalSubjectPresets[number])
+      );
       const token = await auth.currentUser?.getIdToken();
       if (!token) throw new Error("Login required.");
 
@@ -120,7 +133,19 @@ export function PdfUploader() {
       if (directUpload) {
         const cloudinaryUpload = await uploadDirectlyToCloudinary(file, directUpload);
         setStage("extracting");
-        const uploaded = await completeCloudinaryUpload(file, token, directUpload, cloudinaryUpload.secure_url || "", browserExtraction);
+        const uploaded = await completeCloudinaryUpload(
+          file,
+          token,
+          directUpload,
+          cloudinaryUpload.secure_url || "",
+          browserExtraction,
+          {
+            semesterId: semester.semesterId,
+            semesterName: semester.name,
+            subjectId: subject.subjectId,
+            subjectName: subject.name
+          }
+        );
         showUploadResult(uploaded);
         return;
       }
@@ -128,6 +153,10 @@ export function PdfUploader() {
       setStage("extracting");
       const uploadForm = new FormData();
       uploadForm.append("file", file);
+      uploadForm.append("semesterId", semester.semesterId);
+      uploadForm.append("semesterName", semester.name);
+      uploadForm.append("subjectId", subject.subjectId);
+      uploadForm.append("subjectName", subject.name);
 
       const uploadController = new AbortController();
       const uploadTimeout = window.setTimeout(() => uploadController.abort(), 300000);
@@ -154,6 +183,27 @@ export function PdfUploader() {
 
   return (
     <Card className="border-dashed border-aqua/40 bg-white/80">
+      <div className="grid gap-3 border-b border-slate-100 pb-5 sm:grid-cols-2">
+        <label className="block text-sm font-semibold">
+          Semester
+          <Select className="mt-1" value={semesterId} onChange={(event) => {
+            setSemesterId(event.target.value);
+            setSubjectName("General");
+          }} disabled={busy}>
+            {semesters.map((semester) => <option key={semester.semesterId} value={semester.semesterId}>{semester.name}</option>)}
+          </Select>
+        </label>
+        <label className="block text-sm font-semibold">
+          Subject
+          <Input className="mt-1" list="upload-subject-options" value={subjectName} onChange={(event) => setSubjectName(event.target.value)} maxLength={100} disabled={busy} required />
+          <datalist id="upload-subject-options">
+            {Array.from(new Set([
+              ...medicalSubjectPresets,
+              ...subjects.filter((subject) => subject.semesterId === semesterId).map((subject) => subject.name)
+            ])).map((name) => <option key={name} value={name} />)}
+          </datalist>
+        </label>
+      </div>
       <label className="flex cursor-pointer flex-col items-center justify-center gap-3 rounded-lg px-6 py-10 text-center">
         <FileUp className="h-10 w-10 text-aqua" />
         <div>
@@ -490,7 +540,14 @@ async function uploadDirectlyToCloudinary(file: File, signature: CloudinarySigna
   return payload;
 }
 
-async function completeCloudinaryUpload(file: File, token: string, signature: CloudinarySignature, fileUrl: string, extraction: BrowserExtraction) {
+async function completeCloudinaryUpload(
+  file: File,
+  token: string,
+  signature: CloudinarySignature,
+  fileUrl: string,
+  extraction: BrowserExtraction,
+  organization: { semesterId: string; semesterName: string; subjectId: string; subjectName: string }
+) {
   const response = await fetch("/api/cloudinary/complete-pdf-upload", {
     method: "POST",
     cache: "no-store",
@@ -505,7 +562,8 @@ async function completeCloudinaryUpload(file: File, token: string, signature: Cl
       storagePath: signature.storagePath,
       bucketName: signature.bucketName,
       extractedQuestions: extraction.questions,
-      extractionSource: extraction.source
+      extractionSource: extraction.source,
+      ...organization
     })
   });
   const payload = await readPayload<UploadResult>(response);

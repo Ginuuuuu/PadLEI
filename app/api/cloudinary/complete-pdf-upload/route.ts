@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { formatExtractionError, processClientExtractedQuestions, processStoredPdf } from "@/lib/server-pdf-extraction";
+import { requireApprovedUser, safeApiError } from "@/lib/server-auth";
 import type { ParsedQuestion } from "@/lib/extraction";
 import type { PdfFile } from "@/types/models";
 
@@ -10,14 +11,7 @@ export const maxDuration = 300;
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
-    if (!token) return NextResponse.json({ error: "Login required." }, { status: 401 });
-
-    const decoded = await adminAuth.verifyIdToken(token);
-    const userDoc = await adminDb.collection("users").doc(decoded.uid).get();
-    if (!userDoc.exists || userDoc.data()?.approved !== true) {
-      return NextResponse.json({ error: "Approved user access required." }, { status: 403 });
-    }
+    const { ownerId } = await requireApprovedUser(request);
 
     const body = (await request.json()) as {
       pdfId?: string;
@@ -27,6 +21,10 @@ export async function POST(request: Request) {
       bucketName?: string;
       extractedQuestions?: ParsedQuestion[];
       extractionSource?: string;
+      semesterId?: string;
+      semesterName?: string;
+      subjectId?: string;
+      subjectName?: string;
     };
     const pdfId = body.pdfId?.trim() || "";
     const fileName = body.fileName?.trim() || "";
@@ -37,7 +35,7 @@ export async function POST(request: Request) {
     if (!pdfId || !fileName || !fileUrl || !storagePath || !bucketName) {
       return NextResponse.json({ error: "Upload metadata is incomplete." }, { status: 400 });
     }
-    if (!storagePath.startsWith(`cloudinary/raw/study-pdfs/${decoded.uid}/${pdfId}-`)) {
+    if (!storagePath.startsWith(`cloudinary/raw/study-pdfs/${ownerId}/${pdfId}-`)) {
       return NextResponse.json({ error: "Upload metadata does not match this user." }, { status: 403 });
     }
     if (!fileUrl.startsWith(`https://res.cloudinary.com/${bucketName}/`)) {
@@ -47,7 +45,7 @@ export async function POST(request: Request) {
     const uploadedAt = new Date().toISOString();
     const pdf: PdfFile = {
       pdfId,
-      userId: decoded.uid,
+      userId: ownerId,
       fileName,
       fileUrl,
       storagePath,
@@ -58,7 +56,11 @@ export async function POST(request: Request) {
       totalQuestions: 0,
       readyQuestions: 0,
       needsReviewQuestions: 0,
-      errorMessage: ""
+      errorMessage: "",
+      semesterId: body.semesterId?.trim() || "uncategorized",
+      semesterName: body.semesterName?.trim().slice(0, 100) || "Uncategorized",
+      subjectId: body.subjectId?.trim() || "general",
+      subjectName: body.subjectName?.trim().slice(0, 100) || "General"
     };
 
     await adminDb.collection("pdfs").doc(pdfId).set(pdf);
@@ -69,12 +71,12 @@ export async function POST(request: Request) {
       if (Array.isArray(body.extractedQuestions)) {
         extraction = await processClientExtractedQuestions({
           pdfId,
-          userId: decoded.uid,
+          userId: ownerId,
           questions: body.extractedQuestions,
           source: body.extractionSource || "browser PDF text extraction"
         });
       } else {
-        extraction = await processStoredPdf({ pdfId, userId: decoded.uid, storagePath, bucketName, fileUrl });
+        extraction = await processStoredPdf({ pdfId, userId: ownerId, storagePath, bucketName, fileUrl });
       }
     } catch (error) {
       extractionError = formatExtractionError(error);
@@ -92,6 +94,7 @@ export async function POST(request: Request) {
       extractionError
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not complete upload." }, { status: 500 });
+    const safe = safeApiError(error, "Could not complete upload.");
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }

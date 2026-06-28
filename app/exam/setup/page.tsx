@@ -9,6 +9,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { db } from "@/lib/firebase";
+import { dataOwnerId } from "@/lib/account";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { useAuth } from "@/components/AuthProvider";
 import type { PdfFile } from "@/types/models";
@@ -20,7 +21,7 @@ export default function ExamSetupListPage() {
   useEffect(() => {
     if (!appUser) return;
     return onSnapshot(
-      query(collection(db, "pdfs"), where("userId", "==", appUser.uid)),
+      query(collection(db, "pdfs"), where("userId", "==", dataOwnerId(appUser))),
       (snapshot) => {
         const items = snapshot.docs.map((item) => item.data() as PdfFile);
         setPdfs(items.sort((a, b) => Date.parse(b.uploadedAt) - Date.parse(a.uploadedAt)));

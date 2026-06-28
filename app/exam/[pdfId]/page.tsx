@@ -13,6 +13,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { db } from "@/lib/firebase";
+import { dataOwnerId } from "@/lib/account";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { isReadyQuestion } from "@/lib/question-options";
 import { safeNumber } from "@/lib/utils";
@@ -32,7 +33,7 @@ export default function ExamPage() {
     if (!appUser) return;
     getDoc(doc(db, "pdfs", params.pdfId)).then((snapshot) => setPdf(snapshot.data() as PdfFile));
     return onSnapshot(
-      query(collection(db, "questions"), where("pdfId", "==", params.pdfId), where("userId", "==", appUser.uid)),
+      query(collection(db, "questions"), where("pdfId", "==", params.pdfId), where("userId", "==", dataOwnerId(appUser))),
       (snapshot) => {
         setQuestions(snapshot.docs.map((item) => item.data() as Question));
       },

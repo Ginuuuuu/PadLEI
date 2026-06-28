@@ -5,91 +5,181 @@ service cloud.firestore {
       return request.auth != null;
     }
 
+    function currentUserPath() {
+      return /databases/$(database)/documents/users/$(request.auth.uid);
+    }
+
     function currentUser() {
-      return get(/databases/$(database)/documents/users/$(request.auth.uid));
+      return get(currentUserPath());
     }
 
     function isApproved() {
-      return signedIn() && currentUser().data.approved == true;
+      return signedIn()
+        && exists(currentUserPath())
+        && currentUser().data.approved == true;
     }
 
     function isAdmin() {
       return isApproved() && currentUser().data.role == "admin";
     }
 
-    function isBootstrapAdminCreate(userId) {
-      return signedIn()
-        && userId == request.auth.uid
-        && request.auth.token.email == "reshin0026@gmail.com"
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == request.auth.token.email
-        && request.resource.data.approved == true
-        && request.resource.data.role == "admin";
+    function ownerId() {
+      return currentUser().data.get("ownerId", request.auth.uid);
     }
 
-    function hasEmailApproval() {
-      return signedIn()
-        && exists(/databases/$(database)/documents/approvals/$(request.auth.token.email))
-        && get(/databases/$(database)/documents/approvals/$(request.auth.token.email)).data.approved == true;
+    function ownsExisting() {
+      return isApproved() && resource.data.userId == ownerId();
     }
 
-    function isApprovedEmailUserCreate(userId) {
-      return signedIn()
-        && userId == request.auth.uid
-        && hasEmailApproval()
-        && request.resource.data.uid == request.auth.uid
-        && request.resource.data.email == request.auth.token.email
-        && request.resource.data.approved == true
-        && request.resource.data.role == get(/databases/$(database)/documents/approvals/$(request.auth.token.email)).data.role;
+    function createsOwn() {
+      return isApproved() && request.resource.data.userId == ownerId();
     }
 
-    function ownsUserData() {
-      return isApproved() && resource.data.userId == request.auth.uid;
-    }
-
-    function createsOwnUserData() {
-      return isApproved() && request.resource.data.userId == request.auth.uid;
-    }
-
-    function ownProgressDocument(progressId) {
-      return isApproved() && progressId.matches(request.auth.uid + "_.*");
+    function preservesOwner() {
+      return request.resource.data.userId == resource.data.userId;
     }
 
     function validLoginRequestCreate() {
       return request.resource.data.keys().hasOnly([
           "requestId",
           "fullName",
-          "gmail",
-          "preferredPassword",
+          "email",
+          "contactMethod",
           "requestedRole",
           "status",
           "createdAt",
           "updatedAt"
         ])
+        && !request.resource.data.keys().hasAny([
+          "password",
+          "preferredPassword",
+          "confirmPassword",
+          "accessToken",
+          "secret"
+        ])
         && request.resource.data.requestId is string
         && request.resource.data.fullName is string
-        && request.resource.data.gmail is string
-        && request.resource.data.preferredPassword is string
+        && request.resource.data.fullName.size() > 0
+        && request.resource.data.fullName.size() <= 100
+        && request.resource.data.email is string
+        && request.resource.data.email.size() <= 254
+        && request.resource.data.email.matches("^[^@ ]+@[^@ ]+[.][^@ ]+$")
+        && (
+          request.resource.data.contactMethod == "whatsapp"
+          || request.resource.data.contactMethod == "email"
+        )
         && request.resource.data.requestedRole == "user"
         && request.resource.data.status == "pending"
         && request.resource.data.createdAt is string
-        && request.resource.data.updatedAt is string
-        && request.resource.data.gmail.matches(".*@gmail[.]com");
+        && request.resource.data.updatedAt is string;
+    }
+
+    function validTimetable() {
+      return request.resource.data.keys().hasOnly([
+          "examId",
+          "userId",
+          "title",
+          "semesterId",
+          "semesterName",
+          "subjectId",
+          "subjectName",
+          "examType",
+          "examDate",
+          "startTime",
+          "endTime",
+          "status",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 100
+        && request.resource.data.semesterId is string
+        && request.resource.data.subjectId is string
+        && request.resource.data.examType is string
+        && request.resource.data.examDate is string
+        && request.resource.data.startTime is string
+        && request.resource.data.endTime is string
+        && request.resource.data.endTime > request.resource.data.startTime
+        && (
+          request.resource.data.status == "upcoming"
+          || request.resource.data.status == "completed"
+          || request.resource.data.status == "postponed"
+          || request.resource.data.status == "cancelled"
+        );
+    }
+
+    function validActualScore() {
+      return request.resource.data.keys().hasOnly([
+          "scoreId",
+          "userId",
+          "semesterId",
+          "semesterName",
+          "subjectId",
+          "subjectName",
+          "examName",
+          "examDate",
+          "obtainedMarks",
+          "maximumMarks",
+          "percentage",
+          "passMark",
+          "status",
+          "grade",
+          "notes",
+          "createdAt",
+          "updatedAt"
+        ])
+        && request.resource.data.obtainedMarks is number
+        && request.resource.data.maximumMarks is number
+        && request.resource.data.passMark is number
+        && request.resource.data.percentage is number
+        && request.resource.data.maximumMarks > 0
+        && request.resource.data.obtainedMarks >= 0
+        && request.resource.data.obtainedMarks <= request.resource.data.maximumMarks
+        && request.resource.data.passMark >= 0
+        && request.resource.data.passMark <= request.resource.data.maximumMarks
+        && request.resource.data.percentage >= 0
+        && request.resource.data.percentage <= 100
+        && (
+          (
+            request.resource.data.obtainedMarks >= request.resource.data.passMark
+            && request.resource.data.status == "pass"
+          )
+          || (
+            request.resource.data.obtainedMarks < request.resource.data.passMark
+            && request.resource.data.status == "fail"
+          )
+        );
+    }
+
+    function validCatalogRecord() {
+      return request.resource.data.name is string
+        && request.resource.data.name.size() > 0
+        && request.resource.data.name.size() <= 100
+        && request.resource.data.normalizedName is string;
     }
 
     match /users/{userId} {
-      allow read: if isAdmin()
-        || (signedIn() && userId == request.auth.uid)
-        || (signedIn() && resource.data.email == request.auth.token.email);
-      allow create: if isAdmin() || isBootstrapAdminCreate(userId) || isApprovedEmailUserCreate(userId);
-      allow update, delete: if isAdmin();
-      allow update: if signedIn()
-        && userId == request.auth.uid
-        && resource.data.approved == true
-        && request.resource.data.approved == true
-        && request.resource.data.role == resource.data.role
-        && request.resource.data.email == resource.data.email
-        && request.resource.data.uid == resource.data.uid;
+      allow read: if isAdmin() || (signedIn() && userId == request.auth.uid);
+      allow create: if isAdmin();
+      allow update: if isAdmin()
+        || (
+          isApproved()
+          && userId == request.auth.uid
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly([
+            "name",
+            "profilePhotoUrl",
+            "profilePhotoPublicId",
+            "bio",
+            "currentSemesterId",
+            "university",
+            "course",
+            "themePreference",
+            "showDashboardQuote",
+            "updatedAt"
+          ])
+        );
+      allow delete: if isAdmin();
     }
 
     match /approvals/{email} {
@@ -98,46 +188,88 @@ service cloud.firestore {
     }
 
     match /loginRequests/{requestId} {
-      allow read, update, delete: if isAdmin();
       allow create: if validLoginRequestCreate();
+      allow read, update, delete: if isAdmin();
     }
 
     match /pdfs/{pdfId} {
-      allow read, delete: if isAdmin() || ownsUserData();
-      allow create: if createsOwnUserData()
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn()
         && request.resource.data.fileName is string
+        && request.resource.data.semesterId is string
+        && request.resource.data.subjectId is string
         && (
-          request.resource.data.storagePath.matches("users/" + request.auth.uid + "/pdfs/.*")
+          request.resource.data.storagePath.matches("users/" + ownerId() + "/pdfs/.*")
           || request.resource.data.storagePath.matches("cloudinary/.*")
-          || request.resource.data.storagePath.matches("local/users/" + request.auth.uid + "/pdfs/.*")
+          || request.resource.data.storagePath.matches("local/users/" + ownerId() + "/pdfs/.*")
+          || request.resource.data.storagePath.matches("default-pdfs/.*")
         );
-      allow update: if isAdmin() || ownsUserData();
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner());
     }
 
     match /questions/{questionId} {
-      allow read, delete: if isAdmin() || ownsUserData();
-      allow create: if createsOwnUserData();
-      allow update: if isAdmin() || ownsUserData();
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if isAdmin() || createsOwn();
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner());
     }
 
     match /examResults/{resultId} {
-      allow read, delete: if isAdmin() || ownsUserData();
-      allow create: if createsOwnUserData();
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn();
       allow update: if false;
     }
 
-    match /quotes/{quoteId} {
-      allow read, delete: if ownsUserData();
-      allow create: if createsOwnUserData();
-      allow update: if ownsUserData();
+    match /progress/{progressId} {
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn() && progressId.matches(ownerId() + "_.*");
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner());
     }
 
-    match /progress/{progressId} {
-      allow get: if ownProgressDocument(progressId) || ownsUserData();
-      allow list: if isAdmin();
-      allow delete: if ownsUserData();
-      allow create: if createsOwnUserData();
-      allow update: if ownsUserData();
+    match /quotes/{quoteId} {
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn();
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner());
+    }
+
+    match /semesters/{semesterDocumentId} {
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn() && validCatalogRecord();
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner() && validCatalogRecord());
+    }
+
+    match /subjects/{subjectDocumentId} {
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn() && validCatalogRecord() && request.resource.data.semesterId is string;
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner() && validCatalogRecord());
+    }
+
+    match /examTimetable/{examId} {
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn() && validTimetable();
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner() && validTimetable());
+    }
+
+    match /actualExamScores/{scoreId} {
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn() && validActualScore();
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner() && validActualScore());
+    }
+
+    match /userPreferences/{preferenceId} {
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn() && preferenceId == ownerId();
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner());
+    }
+
+    match /reminderAcknowledgements/{reminderId} {
+      allow read, delete: if isAdmin() || ownsExisting();
+      allow create: if createsOwn();
+      allow update: if isAdmin() || (ownsExisting() && preservesOwner());
+    }
+
+    match /accountMigrations/{migrationId} {
+      allow read: if isAdmin();
+      allow create, update, delete: if false;
     }
   }
 }

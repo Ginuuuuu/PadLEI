@@ -1,6 +1,6 @@
 "use client";
 
-import { ReactNode, createContext, useContext, useEffect, useMemo, useState } from "react";
+import { ReactNode, createContext, useCallback, useContext, useEffect, useMemo, useState } from "react";
 import {
   GoogleAuthProvider,
   User,
@@ -11,166 +11,132 @@ import {
   signInWithPopup,
   signOut
 } from "firebase/auth";
-import { collection, doc, getDoc, getDocs, limit, query, setDoc, where } from "firebase/firestore";
-import { auth, db } from "@/lib/firebase";
+import { auth } from "@/lib/firebase";
 import type { AppUser } from "@/types/models";
 
 type AuthContextValue = {
   firebaseUser: User | null;
   appUser: AppUser | null;
   loading: boolean;
+  authError: string;
   loginWithGoogle: () => Promise<void>;
   loginWithEmail: (email: string, password: string) => Promise<void>;
   logout: () => Promise<void>;
+  refreshAppUser: () => Promise<AppUser | null>;
 };
 
 const AuthContext = createContext<AuthContextValue | null>(null);
 const denied = "Access denied. New users must request login access from Admin.";
-const bootstrapAdminEmail = process.env.NEXT_PUBLIC_BOOTSTRAP_ADMIN_EMAIL?.toLowerCase().trim();
 
 export function AuthProvider({ children }: { children: ReactNode }) {
   const [firebaseUser, setFirebaseUser] = useState<User | null>(null);
   const [appUser, setAppUser] = useState<AppUser | null>(null);
-  const [seededUserId, setSeededUserId] = useState("");
+  const [seededOwnerId, setSeededOwnerId] = useState("");
+  const [authError, setAuthError] = useState("");
   const [loading, setLoading] = useState(true);
 
-  useEffect(() => {
-    setPersistence(auth, browserLocalPersistence);
-    return onAuthStateChanged(auth, async (user) => {
-      try {
-        setFirebaseUser(user);
-        if (!user?.email) {
-          setAppUser(null);
-          setLoading(false);
-          return;
-        }
+  const refreshAppUser = useCallback(async () => {
+    const user = auth.currentUser;
+    if (!user) {
+      setAppUser(null);
+      return null;
+    }
 
-        const approvedUser = await resolveApprovedUser(user, true);
-        if (!approvedUser?.approved) {
-          await signOut(auth);
-          setAppUser(null);
-          setLoading(false);
-          return;
-        }
-
-        setAppUser(approvedUser);
-        setLoading(false);
-      } catch {
-        await signOut(auth);
-        setAppUser(null);
-        setLoading(false);
-      }
+    const token = await user.getIdToken();
+    const response = await fetch("/api/account/sync", {
+      method: "POST",
+      cache: "no-store",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${token}`
+      },
+      body: JSON.stringify({})
     });
+    const payload = (await response.json().catch(() => ({}))) as { user?: AppUser; error?: string };
+    if (!response.ok || !payload.user) {
+      const error = new Error(payload.error || "Could not synchronize your account.");
+      Object.assign(error, { status: response.status });
+      throw error;
+    }
+
+    setAppUser(payload.user);
+    setAuthError("");
+    return payload.user;
   }, []);
 
   useEffect(() => {
-    if (!appUser || seededUserId === appUser.uid) return;
+    let unsubscribe: () => void = () => undefined;
+    let cancelled = false;
+
+    async function initializeAuthentication() {
+      try {
+        await setPersistence(auth, browserLocalPersistence);
+      } catch {
+        // Firebase still uses its configured persistence if initialization is unavailable.
+      }
+
+      if (cancelled) return;
+      unsubscribe = onAuthStateChanged(auth, async (user) => {
+        setFirebaseUser(user);
+        if (!user) {
+          setAppUser(null);
+          setAuthError("");
+          setLoading(false);
+          return;
+        }
+
+        try {
+          await refreshAppUser();
+        } catch (error) {
+          const status = typeof error === "object" && error && "status" in error ? Number(error.status) : 0;
+          const message = error instanceof Error ? error.message : "Account data is temporarily unavailable.";
+          if (status === 401 || status === 403) {
+            await signOut(auth);
+            setFirebaseUser(null);
+            setAppUser(null);
+          }
+          setAuthError(message);
+        } finally {
+          setLoading(false);
+        }
+      });
+    }
+
+    void initializeAuthentication();
+    return () => {
+      cancelled = true;
+      unsubscribe();
+    };
+  }, [refreshAppUser]);
+
+  useEffect(() => {
+    if (!appUser || seededOwnerId === appUser.ownerId) return;
     let cancelled = false;
     seedDefaultPdfs().then((ok) => {
-      if (ok && !cancelled) setSeededUserId(appUser.uid);
+      if (ok && !cancelled) setSeededOwnerId(appUser.ownerId);
     });
     return () => {
       cancelled = true;
     };
-  }, [appUser, seededUserId]);
+  }, [appUser, seededOwnerId]);
 
-  async function assertApproved(user: User) {
-    if (!user.email) throw new Error(denied);
-    let record: AppUser | null = null;
-
+  async function assertApproved() {
     try {
-      record = await resolveApprovedUser(user, true);
+      const approvedUser = await refreshAppUser();
+      if (!approvedUser?.approved) throw new Error(denied);
     } catch (error) {
-      await signOut(auth);
-      if (error instanceof Error && error.message.includes("permission")) {
-        throw new Error("Login approved, but Firebase rules are blocking profile access. Deploy the updated Firestore rules.");
-      }
+      const status = typeof error === "object" && error && "status" in error ? Number(error.status) : 0;
+      if (status === 401 || status === 403) await signOut(auth);
       throw error;
     }
-
-    if (!record?.approved) {
-      await signOut(auth);
-      throw new Error(denied);
-    }
-
-    setAppUser(record);
-  }
-
-  async function resolveApprovedUser(user: User, allowBootstrap: boolean) {
-    if (!user.email) return null;
-    const normalizedEmail = user.email.toLowerCase();
-    const userRef = doc(db, "users", user.uid);
-    let snapshot = await getDoc(userRef);
-    let record = snapshot.data() as AppUser | undefined;
-
-    if (snapshot.exists() && record?.approved) {
-      return {
-        ...record,
-        uid: user.uid,
-        email: normalizedEmail,
-        name: user.displayName || record.name || ""
-      };
-    }
-
-    if (!snapshot.exists()) {
-      const approval = await getDoc(doc(db, "approvals", normalizedEmail)).catch(() => null);
-      if (approval?.exists()) {
-        const approvedEmail = approval.data() as Pick<AppUser, "email" | "role" | "approved" | "createdAt">;
-        record = {
-          uid: user.uid,
-          email: normalizedEmail,
-          name: user.displayName || "",
-          role: approvedEmail.role || "user",
-          approved: approvedEmail.approved,
-          createdAt: approvedEmail.createdAt || new Date().toISOString()
-        };
-      } else {
-        const approvedByEmail = await getDocs(query(collection(db, "users"), where("email", "==", normalizedEmail), limit(1)));
-        const pending = approvedByEmail.docs[0];
-        if (pending?.exists()) {
-          record = pending.data() as AppUser;
-          snapshot = pending;
-        }
-      }
-    }
-
-    if (!record?.approved && allowBootstrap && bootstrapAdminEmail && normalizedEmail === bootstrapAdminEmail) {
-      record = {
-        uid: user.uid,
-        email: normalizedEmail,
-        name: user.displayName || "Admin",
-        role: "admin",
-        approved: true,
-        createdAt: new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      };
-    }
-
-    if (!record?.approved) return null;
-
-    await setDoc(
-      userRef,
-      {
-        uid: user.uid,
-        email: normalizedEmail,
-        name: user.displayName || record.name || "",
-        role: record.role || "user",
-        approved: true,
-        createdAt: record.createdAt || new Date().toISOString(),
-        updatedAt: new Date().toISOString()
-      },
-      { merge: true }
-    );
-
-    return { ...record, uid: user.uid, email: normalizedEmail };
   }
 
   async function loginWithGoogle() {
     try {
       const provider = new GoogleAuthProvider();
       provider.setCustomParameters({ prompt: "select_account" });
-      const result = await signInWithPopup(auth, provider);
-      await assertApproved(result.user);
+      await signInWithPopup(auth, provider);
+      await assertApproved();
     } catch (error) {
       throw new Error(readableAuthError(error, "Google login failed. Try again or use email login."));
     }
@@ -178,8 +144,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   async function loginWithEmail(email: string, password: string) {
     try {
-      const result = await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
-      await assertApproved(result.user);
+      await signInWithEmailAndPassword(auth, email.trim().toLowerCase(), password);
+      await assertApproved();
     } catch (error) {
       throw new Error(readableAuthError(error, "Email login failed."));
     }
@@ -190,11 +156,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       firebaseUser,
       appUser,
       loading,
+      authError,
       loginWithGoogle,
       loginWithEmail,
-      logout: () => signOut(auth)
+      logout: () => signOut(auth),
+      refreshAppUser
     }),
-    [firebaseUser, appUser, loading]
+    [firebaseUser, appUser, loading, authError, refreshAppUser]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
@@ -211,7 +179,6 @@ async function seedDefaultPdfs() {
     });
     return response.ok;
   } catch {
-    // Default PDFs are helpful, but login should never fail because seeding was delayed.
     return false;
   }
 }
@@ -221,12 +188,12 @@ function readableAuthError(error: unknown, fallback: string) {
   const message = error instanceof Error ? error.message : fallback;
 
   if (message.startsWith("Access denied")) return message;
-  if (message.includes("Firebase rules are blocking")) return message;
+  if (message.includes("synchronize")) return message;
   if (code === "auth/popup-closed-by-user") return "Google login was closed before completion.";
   if (code === "auth/popup-blocked") return "Google popup was blocked. Allow popups for this site and try again.";
-  if (code === "auth/unauthorized-domain") return "This local domain is not allowed in Firebase Authentication settings.";
+  if (code === "auth/unauthorized-domain") return "This domain is not allowed in Firebase Authentication settings.";
   if (code === "auth/invalid-credential" || code === "auth/user-not-found" || code === "auth/wrong-password") {
-    return "Email/password account not found or password is wrong. Request login access and wait for Admin approval, or ask Admin to reset your password.";
+    return "Email/password account not found or password is wrong. Ask Admin for a password reset link.";
   }
 
   return message || fallback;

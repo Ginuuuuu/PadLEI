@@ -9,6 +9,7 @@ import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { db } from "@/lib/firebase";
+import { dataOwnerId } from "@/lib/account";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { formatDate } from "@/lib/utils";
 import { useAuth } from "@/components/AuthProvider";
@@ -21,7 +22,7 @@ export default function HistoryPage() {
   useEffect(() => {
     if (!appUser) return;
     return onSnapshot(
-      query(collection(db, "examResults"), where("userId", "==", appUser.uid)),
+      query(collection(db, "examResults"), where("userId", "==", dataOwnerId(appUser))),
       (snapshot) => {
         setResults(snapshot.docs.map((item) => item.data() as ExamResult).sort((a, b) => b.date.localeCompare(a.date)));
       },

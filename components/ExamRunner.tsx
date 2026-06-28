@@ -6,6 +6,7 @@ import { doc, setDoc } from "firebase/firestore";
 import { useRouter } from "next/navigation";
 import { Flag, Timer } from "lucide-react";
 import { db } from "@/lib/firebase";
+import { dataOwnerId } from "@/lib/account";
 import { buildExamQuestions, scoreExam } from "@/lib/exam";
 import { getDisplayOptions } from "@/lib/question-options";
 import { useAuth } from "@/components/AuthProvider";
@@ -56,7 +57,7 @@ export function ExamRunner({ allQuestions, settings }: { allQuestions: Question[
       resultId,
       date: new Date().toISOString(),
       ...scoreExam({
-        userId: appUser.uid,
+        userId: dataOwnerId(appUser),
         questions,
         selected,
         marked,

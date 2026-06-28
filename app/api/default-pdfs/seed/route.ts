@@ -1,8 +1,9 @@
 import { NextResponse } from "next/server";
 import kyrgyzSeed from "@/lib/default-pdfs/kyrgyz-test-option-a-highlighted.json";
 import physiologySeed from "@/lib/default-pdfs/physiology.json";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
 import { questionCounts, questionStatus } from "@/lib/question-options";
+import { requireApprovedUser, safeApiError } from "@/lib/server-auth";
 import type { PdfFile, Question } from "@/types/models";
 
 export const runtime = "nodejs";
@@ -23,18 +24,11 @@ const defaultSeeds: DefaultSeed[] = [kyrgyzSeed, physiologySeed] as DefaultSeed[
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
-    if (!token) return NextResponse.json({ error: "Login required." }, { status: 401 });
-
-    const decoded = await adminAuth.verifyIdToken(token);
-    const userDoc = await adminDb.collection("users").doc(decoded.uid).get();
-    if (!userDoc.exists || userDoc.data()?.approved !== true) {
-      return NextResponse.json({ error: "Approved user access required." }, { status: 403 });
-    }
+    const { ownerId } = await requireApprovedUser(request);
 
     const results = [];
     for (const seed of defaultSeeds) {
-      results.push(await seedDefaultPdf(seed, decoded.uid));
+      results.push(await seedDefaultPdf(seed, ownerId));
     }
 
     return NextResponse.json({
@@ -44,7 +38,8 @@ export async function POST(request: Request) {
       readyQuestions: results.reduce((total, result) => total + result.readyQuestions, 0)
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Could not add default PDF." }, { status: 500 });
+    const safe = safeApiError(error, "Could not add default PDF.");
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }
 
@@ -98,6 +93,10 @@ async function seedDefaultPdf(seed: DefaultSeed, userId: string) {
     readyQuestions: counts.readyQuestions,
     needsReviewQuestions: counts.needsReviewQuestions,
     errorMessage: "",
+    semesterId: "uncategorized",
+    semesterName: "Uncategorized",
+    subjectId: "general",
+    subjectName: "General",
     defaultKey: seed.defaultKey,
     defaultVersion: seedVersion
   } satisfies PdfFile & { defaultKey: string; defaultVersion: string };

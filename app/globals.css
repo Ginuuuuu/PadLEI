@@ -3,7 +3,6 @@
 @tailwind utilities;
 
 :root {
-  color-scheme: light;
   background: #f7fafc;
 }
 
@@ -18,12 +17,32 @@ body {
 }
 
 body {
-  min-height: 100vh;
-  background:
-    radial-gradient(circle at top left, rgba(14, 165, 164, 0.16), transparent 34rem),
-    radial-gradient(circle at top right, rgba(139, 92, 246, 0.14), transparent 32rem),
-    #f7fafc;
+  min-height: 100dvh;
+  background: #f7fafc;
   color: #162033;
+  transition: background-color 180ms ease, color 180ms ease;
+}
+
+.dark body {
+  background: #0f172a;
+  color: #e5edf7;
+}
+
+.dark .text-slate-500 {
+  color: #9aa9bd;
+}
+
+.dark .text-slate-600 {
+  color: #b9c5d5;
+}
+
+.dark .text-ink {
+  color: #e5edf7;
+}
+
+.dark .bg-slate-50,
+.dark .bg-slate-100 {
+  background-color: #1e293b;
 }
 
 button,
@@ -34,11 +53,27 @@ textarea {
 }
 
 .focus-ring {
-  @apply focus:outline-none focus:ring-2 focus:ring-aqua/40 focus:ring-offset-2 focus:ring-offset-mist;
+  @apply focus:outline-none focus:ring-2 focus:ring-aqua/60 focus:ring-offset-2 focus:ring-offset-mist dark:focus:ring-offset-slate-950;
 }
 
 .glass {
   background: rgba(255, 255, 255, 0.76);
   border: 1px solid rgba(255, 255, 255, 0.72);
   backdrop-filter: blur(18px);
+}
+
+.dark .glass {
+  background: rgba(15, 23, 42, 0.94);
+  border-color: rgba(71, 85, 105, 0.8);
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
 }

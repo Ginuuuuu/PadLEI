@@ -2,7 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { collection, onSnapshot, orderBy, query } from "firebase/firestore";
-import { Check, KeyRound, Trash2, UserCheck, X } from "lucide-react";
+import { Check, Copy, Mail, MessageCircle, Trash2, UserCheck, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { AppShell } from "@/components/AppShell";
 import { useAuth } from "@/components/AuthProvider";
@@ -10,7 +10,6 @@ import { PageHeader } from "@/components/PageHeader";
 import { ProtectedRoute } from "@/components/ProtectedRoute";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
 import { auth, db } from "@/lib/firebase";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { formatDate } from "@/lib/utils";
@@ -19,7 +18,7 @@ import type { LoginRequest, UserRole } from "@/types/models";
 export default function LoginRequestsPage() {
   const { appUser } = useAuth();
   const [requests, setRequests] = useState<LoginRequest[]>([]);
-  const [passwords, setPasswords] = useState<Record<string, string>>({});
+  const [resetCredential, setResetCredential] = useState<{ email: string; resetLink: string } | null>(null);
   const [busyId, setBusyId] = useState("");
 
   useEffect(() => {
@@ -32,6 +31,8 @@ export default function LoginRequestsPage() {
   }, [appUser]);
 
   async function runAction(request: LoginRequest, action: "approve" | "reject" | "delete", role?: UserRole) {
+    if (action === "delete" && !window.confirm("Delete this login request?")) return;
+    if (action === "reject" && !window.confirm("Reject this login request?")) return;
     setBusyId(`${request.requestId}_${action}_${role || ""}`);
     try {
       const token = await auth.currentUser?.getIdToken();
@@ -45,14 +46,16 @@ export default function LoginRequestsPage() {
         body: JSON.stringify({
           requestId: request.requestId,
           action,
-          role,
-          password: passwords[request.requestId]?.trim() || undefined
+          role
         })
       });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as { error?: string; email?: string; resetLink?: string };
       if (!response.ok) throw new Error(payload.error || "Action failed.");
-      toast.success(action === "approve" ? `Approved ${request.gmail}` : action === "reject" ? "Request rejected" : "Request deleted");
-      if (action === "approve") setPasswords((items) => ({ ...items, [request.requestId]: "" }));
+      const email = request.email || request.gmail || "";
+      toast.success(action === "approve" ? `Approved ${email}` : action === "reject" ? "Request rejected" : "Request deleted");
+      if (action === "approve" && payload.resetLink) {
+        setResetCredential({ email: payload.email || email, resetLink: payload.resetLink });
+      }
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Action failed.");
     } finally {
@@ -70,7 +73,7 @@ export default function LoginRequestsPage() {
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h2 className="font-bold">{pending.length} pending requests</h2>
-              <p className="mt-1 text-sm text-slate-500">Preferred passwords are visible only to admins on this screen.</p>
+              <p className="mt-1 text-sm text-slate-500">Approval creates a one-time Firebase password setup link. Passwords are never stored here.</p>
             </div>
           </div>
         </Card>
@@ -90,7 +93,7 @@ export default function LoginRequestsPage() {
               {requests.map((request) => (
                 <tr key={request.requestId}>
                   <td className="px-4 py-3 font-semibold">{request.fullName}</td>
-                  <td className="px-4 py-3">{request.gmail}</td>
+                  <td className="px-4 py-3">{request.email || request.gmail}</td>
                   <td className="px-4 py-3">{request.requestedRole}</td>
                   <td className="px-4 py-3">{formatDate(request.createdAt)}</td>
                   <td className="px-4 py-3"><StatusPill status={request.status} /></td>
@@ -107,7 +110,7 @@ export default function LoginRequestsPage() {
               <div className="flex items-start justify-between gap-3">
                 <div className="min-w-0">
                   <p className="truncate font-semibold">{request.fullName}</p>
-                  <p className="truncate text-sm text-slate-500">{request.gmail}</p>
+                  <p className="truncate text-sm text-slate-500">{request.email || request.gmail}</p>
                   <p className="mt-1 text-xs text-slate-500">{formatDate(request.createdAt)}</p>
                 </div>
                 <StatusPill status={request.status} />
@@ -119,6 +122,38 @@ export default function LoginRequestsPage() {
           ))}
           {!requests.length ? <Card className="text-center text-sm text-slate-500">No login requests yet.</Card> : null}
         </div>
+        {resetCredential ? (
+          <div className="fixed inset-0 z-50 grid place-items-center bg-ink/60 px-4 py-6" role="dialog" aria-modal="true" aria-labelledby="reset-link-title">
+            <Card className="w-full max-w-xl">
+              <div className="flex items-start justify-between gap-4">
+                <div>
+                  <h2 id="reset-link-title" className="text-lg font-bold">One-time password setup link</h2>
+                  <p className="mt-1 text-sm text-slate-500">Share this now with {resetCredential.email}. It will not be shown again after closing.</p>
+                </div>
+                <Button className="h-11 w-11 px-0" variant="ghost" onClick={() => setResetCredential(null)} aria-label="Close">
+                  <X className="h-5 w-5" />
+                </Button>
+              </div>
+              <p className="mt-4 break-all rounded-lg bg-slate-50 p-3 text-xs">{resetCredential.resetLink}</p>
+              <div className="mt-4 grid gap-2 sm:grid-cols-3">
+                <Button onClick={() => {
+                  void navigator.clipboard.writeText(resetCredential.resetLink);
+                  toast.success("Link copied");
+                }}><Copy className="h-4 w-4" /> Copy</Button>
+                <Button variant="secondary" asChild>
+                  <a href={`https://wa.me/?text=${encodeURIComponent(`PadLEI password setup link for ${resetCredential.email}:\n${resetCredential.resetLink}`)}`} target="_blank" rel="noreferrer">
+                    <MessageCircle className="h-4 w-4" /> WhatsApp
+                  </a>
+                </Button>
+                <Button variant="secondary" asChild>
+                  <a href={`mailto:${encodeURIComponent(resetCredential.email)}?subject=${encodeURIComponent("Set up your PadLEI password")}&body=${encodeURIComponent(resetCredential.resetLink)}`}>
+                    <Mail className="h-4 w-4" /> Email
+                  </a>
+                </Button>
+              </div>
+            </Card>
+          </div>
+        ) : null}
       </AppShell>
     </ProtectedRoute>
   );
@@ -126,17 +161,7 @@ export default function LoginRequestsPage() {
   function Actions({ request }: { request: LoginRequest }) {
     const disabled = Boolean(busyId) || request.status !== "pending";
     return (
-      <div className="grid gap-2 xl:grid-cols-[minmax(12rem,1fr)_auto_auto_auto_auto]">
-        <div className="relative">
-          <KeyRound className="absolute left-3 top-3.5 h-4 w-4 text-slate-400" />
-          <Input
-            className="pl-9"
-            value={passwords[request.requestId] ?? request.preferredPassword}
-            onChange={(event) => setPasswords((items) => ({ ...items, [request.requestId]: event.target.value }))}
-            placeholder="Set custom password"
-            disabled={request.status !== "pending"}
-          />
-        </div>
+      <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
         <Button disabled={disabled} onClick={() => runAction(request, "approve", "user")}><UserCheck className="h-4 w-4" /> User</Button>
         <Button disabled={disabled} variant="secondary" onClick={() => runAction(request, "approve", "admin")}><Check className="h-4 w-4" /> Admin</Button>
         <Button disabled={disabled} variant="secondary" onClick={() => runAction(request, "reject")}><X className="h-4 w-4" /> Reject</Button>

@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { adminDb } from "@/lib/firebase-admin";
+import { requireApprovedUser, safeApiError } from "@/lib/server-auth";
 import { formatExtractionError, processPdfBuffer } from "@/lib/server-pdf-extraction";
 import { savePdfBuffer } from "@/lib/server-pdf-storage";
 import type { PdfFile } from "@/types/models";
@@ -12,17 +13,14 @@ const maxSizeMb = 20;
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
-    if (!token) return NextResponse.json({ error: "Login required." }, { status: 401 });
-
-    const decoded = await adminAuth.verifyIdToken(token);
-    const userDoc = await adminDb.collection("users").doc(decoded.uid).get();
-    if (!userDoc.exists || userDoc.data()?.approved !== true) {
-      return NextResponse.json({ error: "Approved user access required." }, { status: 403 });
-    }
+    const { ownerId } = await requireApprovedUser(request);
 
     const form = await request.formData();
     const file = form.get("file");
+    const semesterId = String(form.get("semesterId") || "uncategorized");
+    const semesterName = String(form.get("semesterName") || "Uncategorized").slice(0, 100);
+    const subjectId = String(form.get("subjectId") || "general");
+    const subjectName = String(form.get("subjectName") || "General").slice(0, 100);
     if (!(file instanceof File)) return NextResponse.json({ error: "PDF file is required." }, { status: 400 });
     const isPdf = file.type === "application/pdf" || file.name.toLowerCase().endsWith(".pdf");
     if (!isPdf) return NextResponse.json({ error: "Only PDF files are allowed." }, { status: 400 });
@@ -30,11 +28,11 @@ export async function POST(request: Request) {
 
     const pdfId = crypto.randomUUID();
     const buffer = Buffer.from(await file.arrayBuffer());
-    const stored = await savePdfBuffer({ userId: decoded.uid, pdfId, fileName: file.name, buffer });
+    const stored = await savePdfBuffer({ userId: ownerId, pdfId, fileName: file.name, buffer });
 
     const pdf: PdfFile = {
       pdfId,
-      userId: decoded.uid,
+      userId: ownerId,
       fileName: file.name,
       fileUrl: stored.fileUrl,
       storagePath: stored.storagePath,
@@ -45,7 +43,11 @@ export async function POST(request: Request) {
       totalQuestions: 0,
       readyQuestions: 0,
       needsReviewQuestions: 0,
-      errorMessage: stored.localFallback ? "Cloudinary is not configured yet. PDF saved locally, so text PDFs will work on this computer." : ""
+      errorMessage: stored.localFallback ? "Cloudinary is not configured yet. PDF saved locally, so text PDFs will work on this computer." : "",
+      semesterId,
+      semesterName,
+      subjectId,
+      subjectName
     };
 
     await adminDb.collection("pdfs").doc(pdfId).set(pdf);
@@ -55,7 +57,7 @@ export async function POST(request: Request) {
     try {
       extraction = await processPdfBuffer({
         pdfId,
-        userId: decoded.uid,
+        userId: ownerId,
         storagePath: stored.storagePath,
         bucketName: stored.bucketName,
         buffer
@@ -77,6 +79,7 @@ export async function POST(request: Request) {
       extractionError
     });
   } catch (error) {
-    return NextResponse.json({ error: error instanceof Error ? error.message : "Upload failed." }, { status: 500 });
+    const safe = safeApiError(error, "Upload failed.");
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
 }

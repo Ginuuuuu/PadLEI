@@ -11,13 +11,17 @@ service firebase.storage {
         && firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.approved == true;
     }
 
+    function ownerId() {
+      return firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.get("ownerId", request.auth.uid);
+    }
+
     function isPdf() {
       return request.resource.contentType == "application/pdf" && request.resource.size < 20 * 1024 * 1024;
     }
 
     match /users/{userId}/pdfs/{fileName} {
-      allow read, delete: if isAdmin() || (signedIn() && request.auth.uid == userId);
-      allow write: if signedIn() && request.auth.uid == userId && isPdf();
+      allow read, delete: if isAdmin() || (signedIn() && (request.auth.uid == userId || ownerId() == userId));
+      allow write: if signedIn() && (request.auth.uid == userId || ownerId() == userId) && isPdf();
     }
   }
 }

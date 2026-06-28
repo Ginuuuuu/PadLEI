@@ -5,6 +5,7 @@ import { collection, deleteDoc, doc, onSnapshot, query, setDoc, updateDoc, where
 import { CheckCircle2, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { db } from "@/lib/firebase";
+import { dataOwnerId } from "@/lib/account";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { QuestionDiagrams } from "@/components/QuestionDiagrams";
 import { useAuth } from "@/components/AuthProvider";
@@ -24,7 +25,7 @@ export function QuestionEditor({ pdfId }: { pdfId: string }) {
   useEffect(() => {
     if (!appUser) return;
     return onSnapshot(
-      query(collection(db, "questions"), where("pdfId", "==", pdfId), where("userId", "==", appUser.uid)),
+      query(collection(db, "questions"), where("pdfId", "==", pdfId), where("userId", "==", dataOwnerId(appUser))),
       (snapshot) => {
         setQuestions(snapshot.docs.map((item) => item.data() as Question).sort((a, b) => a.questionNumber - b.questionNumber));
       },
@@ -87,7 +88,7 @@ export function QuestionEditor({ pdfId }: { pdfId: string }) {
       id,
       questionId: id,
       pdfId,
-      userId: appUser.uid,
+      userId: dataOwnerId(appUser),
       questionNumber: nextNumber,
       questionText: "",
       options: { A: "", B: "", C: "", D: "", E: "", F: "" },

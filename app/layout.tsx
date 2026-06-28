@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 import { Toaster } from "react-hot-toast";
 import { AuthProvider } from "@/components/AuthProvider";
 import { PwaRegistrar } from "@/components/PwaRegistrar";
+import { ThemeProvider } from "@/components/ThemeProvider";
 import "./globals.css";
 
 export const metadata: Metadata = {
@@ -35,17 +36,26 @@ export const viewport: Viewport = {
   initialScale: 1,
   viewportFit: "cover",
   themeColor: "#162033",
-  colorScheme: "light"
+  colorScheme: "light dark"
 };
 
 export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
   return (
-    <html lang="en">
+    <html lang="en" suppressHydrationWarning>
+      <head>
+        <script
+          dangerouslySetInnerHTML={{
+            __html: `(function(){try{var p=localStorage.getItem("padlei-theme")||"system";var d=p==="dark"||(p==="system"&&window.matchMedia("(prefers-color-scheme: dark)").matches);document.documentElement.classList.toggle("dark",d);document.documentElement.style.colorScheme=d?"dark":"light"}catch(e){}})();`
+          }}
+        />
+      </head>
       <body>
         <AuthProvider>
-          {children}
-          <PwaRegistrar />
-          <Toaster position="top-right" />
+          <ThemeProvider>
+            {children}
+            <PwaRegistrar />
+            <Toaster position="top-right" />
+          </ThemeProvider>
         </AuthProvider>
       </body>
     </html>

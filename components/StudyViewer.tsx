@@ -6,6 +6,7 @@ import { collection, doc, getDoc, onSnapshot, query, setDoc, where } from "fireb
 import { Bookmark, CheckCircle2, Search, Shuffle } from "lucide-react";
 import toast from "react-hot-toast";
 import { db } from "@/lib/firebase";
+import { dataOwnerId } from "@/lib/account";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { useAuth } from "@/components/AuthProvider";
 import { QuestionDiagrams } from "@/components/QuestionDiagrams";
@@ -32,7 +33,7 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
   useEffect(() => {
     if (!appUser) return;
     return onSnapshot(
-      query(collection(db, "questions"), where("pdfId", "==", pdfId), where("userId", "==", appUser.uid)),
+      query(collection(db, "questions"), where("pdfId", "==", pdfId), where("userId", "==", dataOwnerId(appUser))),
       (snapshot) => {
         setQuestions(snapshot.docs.map((item) => item.data() as Question).sort((a, b) => a.questionNumber - b.questionNumber));
       },
@@ -42,14 +43,15 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
 
   useEffect(() => {
     if (!appUser) return;
-    const progressRef = doc(db, "progress", `${appUser.uid}_${pdfId}`);
+    const ownerId = dataOwnerId(appUser);
+    const progressRef = doc(db, "progress", `${ownerId}_${pdfId}`);
     getDoc(progressRef)
       .then((snapshot) => {
-        setProgress(snapshot.exists() ? (snapshot.data() as Progress) : emptyProgress(appUser.uid));
+        setProgress(snapshot.exists() ? (snapshot.data() as Progress) : emptyProgress(ownerId));
       })
       .catch((error) => {
         handleSnapshotError(error, "study progress");
-        setProgress(emptyProgress(appUser.uid));
+        setProgress(emptyProgress(ownerId));
       });
   }, [appUser, pdfId]);
 
@@ -70,7 +72,7 @@ export function StudyViewer({ pdfId }: { pdfId: string }) {
     if (!appUser || !progress) return;
     const next = { ...progress, ...patch };
     setProgress(next);
-    await setDoc(doc(db, "progress", `${appUser.uid}_${pdfId}`), next, { merge: true });
+    await setDoc(doc(db, "progress", `${dataOwnerId(appUser)}_${pdfId}`), next, { merge: true });
   }
 
   async function markStudied(kind: "studiedQuestions" | "learnedQuestions" | "bookmarkedQuestions") {

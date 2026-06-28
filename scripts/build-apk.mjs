@@ -1,4 +1,4 @@
-import { existsSync, readdirSync, writeFileSync } from "node:fs";
+import { copyFileSync, existsSync, readdirSync, writeFileSync } from "node:fs";
 import { join } from "node:path";
 import { spawnSync } from "node:child_process";
 
@@ -7,6 +7,7 @@ const task = mode === "release" ? "assembleRelease" : "assembleDebug";
 const workspace = process.cwd();
 const androidDir = join(workspace, "android");
 const gradle = findGradle();
+const javaHome = findJavaHome();
 
 if (!gradle) {
   console.error(`
@@ -60,10 +61,31 @@ writeFileSync(join(androidDir, "local.properties"), `sdk.dir=${escapeWindowsPath
 
 console.log(`Using Gradle: ${gradle}`);
 console.log(`Using Android SDK: ${androidSdk}`);
+if (javaHome) console.log(`Using Java: ${javaHome}`);
 const result = spawnSync(gradle, ["-p", androidDir, task], {
   stdio: "inherit",
-  shell: process.platform === "win32"
+  shell: process.platform === "win32",
+  env: {
+    ...process.env,
+    ...(javaHome
+      ? {
+          JAVA_HOME: javaHome,
+          PATH: `${join(javaHome, "bin")}${process.platform === "win32" ? ";" : ":"}${process.env.PATH || ""}`
+        }
+      : {})
+  }
 });
+
+if (result.status === 0) {
+  const outputDirectory = join(androidDir, "app", "build", "outputs", "apk", mode);
+  const generatedName = mode === "release" ? "app-release-unsigned.apk" : "app-debug.apk";
+  const generatedApk = join(outputDirectory, generatedName);
+  const namedApk = join(outputDirectory, "PadLEI.apk");
+  if (existsSync(generatedApk)) {
+    copyFileSync(generatedApk, namedApk);
+    console.log(`PadLEI APK: ${namedApk}`);
+  }
+}
 
 process.exit(result.status ?? 1);
 
@@ -136,4 +158,16 @@ function findAndroidSdk() {
 
 function escapeWindowsPath(path) {
   return process.platform === "win32" ? path.replaceAll("\\", "\\\\") : path;
+}
+
+function findJavaHome() {
+  const executable = process.platform === "win32" ? "java.exe" : "java";
+  const candidates = [
+    process.platform === "win32" ? join(process.env.ProgramFiles || "C:\\Program Files", "Android", "Android Studio", "jbr") : "",
+    process.platform === "darwin" ? "/Applications/Android Studio.app/Contents/jbr/Contents/Home" : "",
+    process.platform === "linux" ? "/opt/android-studio/jbr" : "",
+    process.env.JAVA_HOME
+  ].filter(Boolean);
+
+  return candidates.find((candidate) => existsSync(join(candidate, "bin", executable))) || null;
 }

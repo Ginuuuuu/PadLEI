@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
+import { normalizeEmail } from "@/lib/account";
 import { adminAuth, adminDb } from "@/lib/firebase-admin";
+import { requireApprovedUser, safeApiError } from "@/lib/server-auth";
 import type { UserRole } from "@/types/models";
 
 export const runtime = "nodejs";
@@ -7,81 +9,60 @@ export const dynamic = "force-dynamic";
 
 export async function POST(request: Request) {
   try {
-    const token = request.headers.get("authorization")?.replace("Bearer ", "");
-    if (!token) return NextResponse.json({ error: "Admin login required." }, { status: 401 });
-
-    const decoded = await adminAuth.verifyIdToken(token);
-    const adminUser = await adminDb.collection("users").doc(decoded.uid).get();
-    if (!adminUser.exists || adminUser.data()?.role !== "admin" || adminUser.data()?.approved !== true) {
-      return NextResponse.json({ error: "Only admin users can create accounts." }, { status: 403 });
+    await requireApprovedUser(request, { admin: true });
+    const body = (await request.json()) as Record<string, unknown>;
+    if (Object.keys(body).some((key) => !["email", "role", "name"].includes(key))) {
+      return NextResponse.json({ error: "Unexpected fields were submitted." }, { status: 400 });
     }
 
-    const body = (await request.json()) as { email?: string; role?: UserRole; password?: string };
-    const email = body.email?.toLowerCase().trim();
-    const role = body.role === "admin" ? "admin" : "user";
-    const password = body.password?.trim() || generatePassword();
+    const email = typeof body.email === "string" ? normalizeEmail(body.email) : "";
+    const name = typeof body.name === "string" ? body.name.trim().slice(0, 100) : "";
+    const role: UserRole = body.role === "admin" ? "admin" : "user";
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email)) {
+      return NextResponse.json({ error: "A valid email is required." }, { status: 400 });
+    }
 
-    if (!email) return NextResponse.json({ error: "Email is required." }, { status: 400 });
-    if (password.length < 6) return NextResponse.json({ error: "Password must be at least 6 characters." }, { status: 400 });
-
-    let uid: string;
+    let authUser;
     let createdAuthUser = false;
-
     try {
-      const existing = await adminAuth.getUserByEmail(email);
-      uid = existing.uid;
-      await adminAuth.updateUser(uid, { password, disabled: false, emailVerified: existing.emailVerified });
+      authUser = await adminAuth.getUserByEmail(email);
+      if (authUser.disabled) authUser = await adminAuth.updateUser(authUser.uid, { disabled: false });
     } catch {
-      const created = await adminAuth.createUser({
-        email,
-        password,
-        emailVerified: false,
-        disabled: false
-      });
-      uid = created.uid;
+      authUser = await adminAuth.createUser({ email, displayName: name, emailVerified: false, disabled: false });
       createdAuthUser = true;
     }
 
-    const createdAt = new Date().toISOString();
-    const updatedAt = createdAt;
-    const userRecord = {
-      uid,
-      email,
-      name: "",
-      role,
-      approved: true,
-      createdAt,
-      updatedAt
-    };
-
+    const existingUsers = await adminDb.collection("users").where("email", "==", email).limit(1).get();
+    const existing = existingUsers.docs[0]?.data() as { ownerId?: string; createdAt?: string } | undefined;
+    const ownerId = existing?.ownerId || existingUsers.docs[0]?.id || authUser.uid;
+    const now = new Date().toISOString();
+    const createdAt = existing?.createdAt || now;
     await Promise.all([
-      adminDb.collection("users").doc(uid).set(userRecord, { merge: true }),
-      adminDb.collection("approvals").doc(email).set({ email, role, approved: true, createdAt, updatedAt }, { merge: true }),
-      adminDb.collection("users").doc(`pending_${email.replace(/[^a-z0-9]/gi, "_")}`).delete().catch(() => undefined)
+      adminDb.collection("users").doc(authUser.uid).set(
+        {
+          uid: authUser.uid,
+          ownerId,
+          email,
+          normalizedEmail: email,
+          name: name || authUser.displayName || "",
+          role,
+          approved: true,
+          mustChangePassword: false,
+          createdAt,
+          updatedAt: now
+        },
+        { merge: true }
+      ),
+      adminDb.collection("approvals").doc(email).set(
+        { email, normalizedEmail: email, ownerId, role, approved: true, createdAt, updatedAt: now },
+        { merge: true }
+      )
     ]);
 
-    return NextResponse.json({
-      uid,
-      email,
-      role,
-      temporaryPassword: password,
-      createdAuthUser
-    });
+    const resetLink = await adminAuth.generatePasswordResetLink(email);
+    return NextResponse.json({ uid: authUser.uid, email, role, resetLink, createdAuthUser });
   } catch (error) {
-    return NextResponse.json(
-      {
-        error:
-          error instanceof Error
-            ? error.message
-            : "Could not create user. Check Firebase Admin environment variables."
-      },
-      { status: 500 }
-    );
+    const safe = safeApiError(error, "Could not create user.");
+    return NextResponse.json({ error: safe.message }, { status: safe.status });
   }
-}
-
-function generatePassword() {
-  const alphabet = "ABCDEFGHJKLMNPQRSTUVWXYZabcdefghijkmnopqrstuvwxyz23456789";
-  const values = crypto.getRandomValues(new Uint8Array(12));
-  return Array.from(values, (value) => alphabet[value % alphabet.length]).join("");
 }

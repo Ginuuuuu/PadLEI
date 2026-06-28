@@ -1,4 +1,4 @@
-const CACHE_NAME = "padlei-pwa-v1";
+const CACHE_NAME = "padlei-pwa-v2";
 const APP_SHELL = [
   "/offline.html",
   "/favicon.ico",

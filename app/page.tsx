@@ -2,18 +2,20 @@
 
 import { FormEvent, useEffect, useState } from "react";
 import { useRouter } from "next/navigation";
-import { GraduationCap, Mail, X } from "lucide-react";
+import { GraduationCap, Loader2, Mail, MessageCircle, RefreshCw, WifiOff, X } from "lucide-react";
 import toast from "react-hot-toast";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Select } from "@/components/ui/input";
+import { buildAccessRequestNotificationUrl } from "@/lib/login-request-notifications";
 
 const googleTimeoutMessage = "Google login did not finish. Allow popups for this site, close any old Google popup, then try again.";
 
 export default function LoginPage() {
   const router = useRouter();
-  const { loginWithGoogle, loginWithEmail } = useAuth();
+  const { appUser, firebaseUser, loading, authError, loginWithGoogle, loginWithEmail, refreshAppUser } = useAuth();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [emailBusy, setEmailBusy] = useState(false);
@@ -26,6 +28,10 @@ export default function LoginPage() {
   useEffect(() => {
     setNativeMobileApp(window.navigator.userAgent.includes("PadLEIAndroid") || window.navigator.userAgent.includes("PadLEIiOS"));
   }, []);
+
+  useEffect(() => {
+    if (!loading && appUser) router.replace("/dashboard");
+  }, [appUser, loading, router]);
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -58,37 +64,65 @@ export default function LoginPage() {
 
   async function requestAccess(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const form = new FormData(event.currentTarget);
+    const formElement = event.currentTarget;
+    const form = new FormData(formElement);
     const fullName = String(form.get("fullName") || "").trim();
-    const gmail = String(form.get("gmail") || "").toLowerCase().trim();
-    const preferredPassword = String(form.get("preferredPassword") || "").trim();
-    const confirmPassword = String(form.get("confirmPassword") || "").trim();
+    const requestEmail = String(form.get("email") || "").toLowerCase().trim();
+    const contactMethod = String(form.get("contactMethod") || "");
 
-    if (!fullName || !gmail || !preferredPassword || !confirmPassword) return toast.error("All fields are required.");
-    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(gmail)) return toast.error("Enter a valid Gmail address.");
-    if (preferredPassword.length < 6) return toast.error("Password must be at least 6 characters.");
-    if (preferredPassword !== confirmPassword) return toast.error("Passwords must match.");
+    if (!fullName || !requestEmail || !["whatsapp", "email"].includes(contactMethod)) return toast.error("All fields are required.");
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(requestEmail)) return toast.error("Enter a valid email address.");
 
     setRequestBusy(true);
     try {
       const response = await fetch("/api/login-request", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fullName, gmail, preferredPassword, confirmPassword })
+        body: JSON.stringify({ fullName, email: requestEmail, contactMethod })
       });
-      const payload = (await response.json()) as { error?: string };
+      const payload = (await response.json()) as {
+        requestId?: string;
+        fullName?: string;
+        email?: string;
+        contactMethod?: "whatsapp" | "email";
+        error?: string;
+      };
       if (!response.ok) throw new Error(payload.error || "Could not submit request.");
 
-      const message = `Hello Admin, I am requesting login access.\n\nName: ${fullName}\nGmail: ${gmail}\nPreferred Password: ${preferredPassword}\n\nPlease approve my account.`;
-      window.open(`https://wa.me/918807905821?text=${encodeURIComponent(message)}`, "_blank", "noopener,noreferrer");
-      toast.success("Request sent. WhatsApp opened for admin notification.");
+      if (!payload.requestId || !payload.email || !payload.fullName || !payload.contactMethod) {
+        throw new Error("The request was saved, but the contact link could not be prepared.");
+      }
+      window.open(buildAccessRequestNotificationUrl({
+        requestId: payload.requestId,
+        fullName: payload.fullName,
+        email: payload.email,
+        contactMethod: payload.contactMethod
+      }), "_blank", "noopener,noreferrer");
+      toast.success(`Request sent. ${payload.contactMethod === "whatsapp" ? "WhatsApp" : "Email"} opened for admin notification.`);
       setRequestOpen(false);
-      event.currentTarget.reset();
+      formElement.reset();
     } catch (error) {
       toast.error(error instanceof Error ? error.message : "Could not submit request.");
     } finally {
       setRequestBusy(false);
     }
+  }
+
+  if (loading) {
+    return <main className="grid min-h-dvh place-items-center"><Loader2 className="h-8 w-8 animate-spin text-aqua" aria-label="Restoring login" /></main>;
+  }
+
+  if (firebaseUser && !appUser) {
+    return (
+      <main className="grid min-h-dvh place-items-center px-4">
+        <Card className="w-full max-w-md text-center">
+          <WifiOff className="mx-auto h-9 w-9 text-amber-600" />
+          <h1 className="mt-4 text-xl font-bold">Restoring your PadLEI account</h1>
+          <p className="mt-2 text-sm text-slate-600">{authError || "Your saved login is available, but account data could not be loaded yet."}</p>
+          <Button className="mt-5" onClick={() => void refreshAppUser()}><RefreshCw className="h-4 w-4" /> Retry</Button>
+        </Card>
+      </main>
+    );
   }
 
   return (
@@ -111,8 +145,14 @@ export default function LoginPage() {
           </Button>
         )}
         <form className="mt-4 space-y-3" onSubmit={submit}>
-          <Input type="email" placeholder="Email" value={email} onChange={(event) => setEmail(event.target.value)} required />
-          <Input type="password" placeholder="Password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+          <label className="block text-sm font-semibold">
+            Email
+            <Input className="mt-1" type="email" autoComplete="email" placeholder="student@example.com" value={email} onChange={(event) => setEmail(event.target.value)} required />
+          </label>
+          <label className="block text-sm font-semibold">
+            Password
+            <Input className="mt-1" type="password" autoComplete="current-password" placeholder="Your password" value={password} onChange={(event) => setPassword(event.target.value)} required />
+          </label>
           <Button className="w-full" disabled={emailBusy || googleBusy}>{emailBusy ? "Checking access..." : "Login"}</Button>
         </form>
         {loginError ? (
@@ -135,11 +175,11 @@ export default function LoginPage() {
         </div>
       </Card>
       {requestOpen ? (
-        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-4 py-6 backdrop-blur-sm">
+        <div className="fixed inset-0 z-50 grid place-items-center bg-ink/40 px-4 py-6 backdrop-blur-sm" role="dialog" aria-modal="true" aria-labelledby="request-access-title">
           <Card className="w-full max-w-lg">
             <div className="flex items-center justify-between gap-3">
               <div>
-                <h2 className="text-lg font-bold">Request Login Access</h2>
+                <h2 id="request-access-title" className="text-lg font-bold">Request Login Access</h2>
                 <p className="mt-1 text-sm text-slate-500">Your request goes to Admin for approval.</p>
               </div>
               <Button className="h-11 w-11 px-0" variant="ghost" onClick={() => setRequestOpen(false)} aria-label="Close request form">
@@ -147,10 +187,25 @@ export default function LoginPage() {
               </Button>
             </div>
             <form className="mt-5 space-y-3" onSubmit={requestAccess}>
-              <Input name="fullName" placeholder="Full Name" required />
-              <Input name="gmail" type="email" placeholder="Gmail" required />
-              <Input name="preferredPassword" type="password" placeholder="Preferred Password" minLength={6} required />
-              <Input name="confirmPassword" type="password" placeholder="Confirm Password" minLength={6} required />
+              <label className="block text-sm font-semibold">
+                Full name
+                <Input className="mt-1" name="fullName" autoComplete="name" placeholder="Student name" maxLength={100} required />
+              </label>
+              <label className="block text-sm font-semibold">
+                Email address
+                <Input className="mt-1" name="email" type="email" autoComplete="email" placeholder="student@example.com" required />
+              </label>
+              <label className="block text-sm font-semibold">
+                Preferred contact method
+                <Select className="mt-1" name="contactMethod" defaultValue="whatsapp" required>
+                  <option value="whatsapp">WhatsApp</option>
+                  <option value="email">Email</option>
+                </Select>
+              </label>
+              <div className="rounded-lg bg-slate-50 p-3 text-sm text-slate-600">
+                <p className="flex items-center gap-2 font-semibold text-ink"><MessageCircle className="h-4 w-4" /> No password is requested or shared.</p>
+                <p className="mt-1">After approval, Admin will send a secure Firebase password setup link.</p>
+              </div>
               <Button className="w-full" disabled={requestBusy}>{requestBusy ? "Submitting..." : "Submit Request"}</Button>
             </form>
           </Card>

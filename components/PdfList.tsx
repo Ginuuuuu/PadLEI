@@ -6,6 +6,7 @@ import { collection, onSnapshot, query, where } from "firebase/firestore";
 import { BookOpen, ExternalLink, FileText, GraduationCap, RotateCw, Trash2 } from "lucide-react";
 import toast from "react-hot-toast";
 import { auth, db } from "@/lib/firebase";
+import { dataOwnerId } from "@/lib/account";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { useAuth } from "@/components/AuthProvider";
 import { Button } from "@/components/ui/button";
@@ -22,7 +23,7 @@ export function PdfList({ limit }: { limit?: number }) {
     if (!appUser) return;
     setLoading(true);
     return onSnapshot(
-      query(collection(db, "pdfs"), where("userId", "==", appUser.uid)),
+      query(collection(db, "pdfs"), where("userId", "==", dataOwnerId(appUser))),
       (snapshot) => {
         setPdfs(snapshot.docs.map((item) => item.data() as PdfFile).sort((a, b) => b.uploadedAt.localeCompare(a.uploadedAt)));
         setLoading(false);
@@ -64,7 +65,7 @@ export function PdfList({ limit }: { limit?: number }) {
           "Content-Type": "application/json",
           ...(token ? { Authorization: `Bearer ${token}` } : {})
         },
-        body: JSON.stringify({ pdfId: pdf.pdfId, userId: appUser.uid, storagePath: pdf.storagePath, bucketName: pdf.bucketName })
+        body: JSON.stringify({ pdfId: pdf.pdfId, storagePath: pdf.storagePath, bucketName: pdf.bucketName })
       });
       const payload = (await response.json()) as { totalQuestions?: number; readyQuestions?: number; needsReview?: number; error?: string };
       if (!response.ok) throw new Error(payload.error || "Extraction failed");
