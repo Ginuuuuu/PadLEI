@@ -5,7 +5,7 @@ export function handleSnapshotError(error: unknown, label = "data") {
   console.error(`Firestore listener failed for ${label}:`, error);
 
   if (message.toLowerCase().includes("permission")) {
-    toast.error("Firebase permissions are blocking this data. Deploy the latest Firestore rules.");
+    toast.error(`Firebase permissions blocked ${label}. Deploy the latest Firestore rules.`);
     return;
   }
 
