@@ -292,12 +292,34 @@ function dateStamp(value: string) {
 }
 
 async function saveReportBlob(blob: Blob, fileName: string) {
+  type AndroidDownloadBridge = {
+    beginBase64File?: (transferId: string, fileName: string, mimeType: string) => boolean;
+    appendBase64FileChunk?: (transferId: string, chunk: string) => boolean;
+    finishBase64File?: (transferId: string) => boolean;
+    cancelBase64File?: (transferId: string) => void;
+    saveBase64File?: (base64: string, fileName: string, mimeType: string) => boolean | void;
+  };
   const nativeWindow = window as typeof window & {
-    PadLEINative?: { saveBase64File: (base64: string, fileName: string, mimeType: string) => void };
+    PadLEINative?: AndroidDownloadBridge;
     webkit?: { messageHandlers?: { padleiDownload?: { postMessage: (payload: Record<string, string>) => void } } };
   };
-  if (nativeWindow.PadLEINative?.saveBase64File) {
-    nativeWindow.PadLEINative.saveBase64File(await blobToBase64(blob), fileName, blob.type || "application/pdf");
+  const androidBridge = nativeWindow.PadLEINative;
+  if (
+    androidBridge?.beginBase64File
+    && androidBridge.appendBase64FileChunk
+    && androidBridge.finishBase64File
+  ) {
+    await saveAndroidReportInChunks({
+      beginBase64File: androidBridge.beginBase64File,
+      appendBase64FileChunk: androidBridge.appendBase64FileChunk,
+      finishBase64File: androidBridge.finishBase64File,
+      cancelBase64File: androidBridge.cancelBase64File
+    }, blob, fileName);
+    return;
+  }
+  if (androidBridge?.saveBase64File) {
+    const accepted = androidBridge.saveBase64File(await blobToBase64(blob), fileName, blob.type || "application/pdf");
+    if (accepted === false) throw new Error("The Android app could not save this report.");
     return;
   }
   if (nativeWindow.webkit?.messageHandlers?.padleiDownload) {
@@ -315,6 +337,40 @@ async function saveReportBlob(blob: Blob, fileName: string) {
   anchor.download = fileName;
   anchor.click();
   window.setTimeout(() => URL.revokeObjectURL(url), 30_000);
+}
+
+async function saveAndroidReportInChunks(
+  bridge: {
+    beginBase64File: (transferId: string, fileName: string, mimeType: string) => boolean;
+    appendBase64FileChunk: (transferId: string, chunk: string) => boolean;
+    finishBase64File: (transferId: string) => boolean;
+    cancelBase64File?: (transferId: string) => void;
+  },
+  blob: Blob,
+  fileName: string
+) {
+  const base64 = await blobToBase64(blob);
+  const transferId = `report-${Date.now()}-${Math.random().toString(36).slice(2)}`;
+  const mimeType = blob.type || "application/pdf";
+  const chunkSize = 128 * 1024;
+
+  if (!bridge.beginBase64File(transferId, fileName, mimeType)) {
+    throw new Error("The Android app could not prepare the report download.");
+  }
+
+  try {
+    for (let offset = 0; offset < base64.length; offset += chunkSize) {
+      if (!bridge.appendBase64FileChunk(transferId, base64.slice(offset, offset + chunkSize))) {
+        throw new Error("The Android app could not transfer the complete report.");
+      }
+    }
+    if (!bridge.finishBase64File(transferId)) {
+      throw new Error("The Android app could not finish saving the report.");
+    }
+  } catch (error) {
+    bridge.cancelBase64File?.(transferId);
+    throw error;
+  }
 }
 
 function blobToBase64(blob: Blob) {
