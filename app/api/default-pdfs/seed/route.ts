@@ -1,4 +1,5 @@
 import { NextResponse } from "next/server";
+import histologySeed from "@/lib/default-pdfs/histology-osh-2025-2026.json";
 import kyrgyzSeed from "@/lib/default-pdfs/kyrgyz-test-option-a-highlighted.json";
 import physiologySeed from "@/lib/default-pdfs/physiology.json";
 import { adminDb } from "@/lib/firebase-admin";
@@ -17,10 +18,14 @@ type DefaultSeed = {
   fileName: string;
   fileUrl: string;
   storagePath: string;
+  semesterId?: string;
+  semesterName?: string;
+  subjectId?: string;
+  subjectName?: string;
   questions: DefaultSeedQuestion[];
 };
 
-const defaultSeeds: DefaultSeed[] = [kyrgyzSeed, physiologySeed] as DefaultSeed[];
+const defaultSeeds: DefaultSeed[] = [kyrgyzSeed, physiologySeed, histologySeed] as DefaultSeed[];
 
 export async function POST(request: Request) {
   try {
@@ -93,10 +98,10 @@ async function seedDefaultPdf(seed: DefaultSeed, userId: string) {
     readyQuestions: counts.readyQuestions,
     needsReviewQuestions: counts.needsReviewQuestions,
     errorMessage: "",
-    semesterId: "uncategorized",
-    semesterName: "Uncategorized",
-    subjectId: "general",
-    subjectName: "General",
+    semesterId: seed.semesterId || "uncategorized",
+    semesterName: seed.semesterName || "Uncategorized",
+    subjectId: seed.subjectId || "general",
+    subjectName: seed.subjectName || "General",
     defaultKey: seed.defaultKey,
     defaultVersion: seedVersion
   } satisfies PdfFile & { defaultKey: string; defaultVersion: string };
