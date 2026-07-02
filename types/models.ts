@@ -145,6 +145,25 @@ export type ExamResult = {
   questions: Question[];
 };
 
+export type StoredExamResult = Omit<ExamResult, "answers" | "questions"> & {
+  schemaVersion?: number;
+  detailChunkCount?: number;
+  answers?: ExamAnswer[];
+  questions?: Question[];
+};
+
+export type ExamResultDetailItem = {
+  question: Question;
+  answer: ExamAnswer;
+};
+
+export type ExamResultDetailChunk = {
+  resultId: string;
+  userId: string;
+  index: number;
+  items: ExamResultDetailItem[];
+};
+
 export type Quote = {
   quoteId: string;
   userId?: string;

@@ -91,6 +91,7 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
   const questions: ParsedQuestion[] = [];
   let current = null as ParsedQuestion | null;
   let lastOption: keyof ParsedQuestion["options"] | null = null;
+  const usesQuestionPrefix = lines.some((line) => /^(?:Q\.?\s*)\d{1,4}\s*[\).:\-]/i.test(line.text.replace(/\s+/g, " ").trim()));
 
   function startQuestion(questionNumber: number, questionText: string, sourceLineIndex: number) {
     current = {
@@ -128,7 +129,7 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
 
   for (let lineIndex = 0; lineIndex < lines.length; lineIndex += 1) {
     const line = lines[lineIndex];
-    const rawText = line.text.replace(/\s+/g, " ").trim();
+    const rawText = normalizeExtractedLineText(line.text);
     if (!rawText) continue;
 
     const answerLineMatch = rawText.match(/^(?:answer|ans|correct(?:\s+answer|\s+option)?)\s*[:\-.)]\s*([A-F1-6])(?=\s|$|[,;])/i);
@@ -139,7 +140,10 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
       continue;
     }
 
-    const questionMatch = rawText.match(/^(\d{1,4})\s*\.\s*(.+)/);
+    const hasQuestionPrefix = /^(?:Q\.?\s*)\d{1,4}\s*[\).:\-]/i.test(rawText);
+    const questionMatch = usesQuestionPrefix && !hasQuestionPrefix
+      ? null
+      : rawText.match(/^(?:Q\.?\s*)?(\d{1,4})\s*[\).:\-]\s*(.+)/i);
     const optionMatch = rawText.match(new RegExp(`^${optionPrefixPattern}(.+)`, "i"));
     const optionCount = current ? Object.values(current.options).filter(Boolean).length : 0;
     const optionKey = toAnswerLetter(optionMatch?.[1] || optionMatch?.[2]);
@@ -162,13 +166,17 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
     }
 
     if (current && optionMatch) {
-      const key = toAnswerLetter(optionMatch[1] || optionMatch[2]);
+      const parsedKey = toAnswerLetter(optionMatch[1] || optionMatch[2]);
+      const nextAvailableKey = optionKeys.find((key) => !current?.options[key]?.trim()) || "";
+      const key = parsedKey && current.options[parsedKey]?.trim()
+        ? nextAvailableKey
+        : parsedKey;
       if (key) {
         touchCurrent(lineIndex);
         const optionText = cleanInlineMarkers(optionMatch[3]);
         current.options[key] = [current.options[key], optionText].filter(Boolean).join(" ").trim();
         lastOption = key;
-        if (line.highlighted || line.styled || hasInlineAnswerMarker(rawText)) {
+        if (!current.correctAnswer && (line.highlighted || line.styled || hasInlineAnswerMarker(rawText))) {
           current.correctAnswer = key;
           current.extractionNote = line.highlighted ? "Answer detected from highlighted option." : line.styled ? "Answer detected from styled option." : "Answer detected from tick/mark.";
         }
@@ -184,7 +192,7 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
     if (current && lastOption) {
       touchCurrent(lineIndex);
       current.options[lastOption] = `${current.options[lastOption]} ${cleanInlineMarkers(rawText)}`.trim();
-      if (line.highlighted || line.styled || hasInlineAnswerMarker(rawText)) {
+      if (!current.correctAnswer && (line.highlighted || line.styled || hasInlineAnswerMarker(rawText))) {
         current.correctAnswer = lastOption;
         current.extractionNote = line.highlighted ? "Answer detected from highlighted option." : line.styled ? "Answer detected from styled option." : "Answer detected from tick/mark.";
       }
@@ -196,6 +204,14 @@ export function parseMcqLines(lines: ExtractedLine[]): ParsedQuestion[] {
 
   finishCurrent();
   return questions;
+}
+
+function normalizeExtractedLineText(text: string) {
+  const normalized = text.replace(/\s+/g, " ").trim();
+  return normalized.replace(
+    new RegExp(String.raw`^\d{1,3}\s+(?=${optionMarkerPattern})`, "i"),
+    ""
+  );
 }
 
 function parseBlock(block: string, fallbackNumber: number, answerKey: Map<number, Question["correctAnswer"]>): ParsedQuestion | null {

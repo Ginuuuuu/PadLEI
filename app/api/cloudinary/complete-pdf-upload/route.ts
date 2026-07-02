@@ -1,6 +1,8 @@
 import { NextResponse } from "next/server";
+import histologySeed from "@/lib/default-pdfs/histology-osh-2025-2026.json";
 import { adminDb } from "@/lib/firebase-admin";
 import { formatExtractionError, processClientExtractedQuestions, processStoredPdf } from "@/lib/server-pdf-extraction";
+import { histologyQuestionBankKey, knownQuestionBankForHash } from "@/lib/known-question-bank-fingerprints";
 import { requireApprovedUser, safeApiError } from "@/lib/server-auth";
 import type { ParsedQuestion } from "@/lib/extraction";
 import type { PdfFile } from "@/types/models";
@@ -21,6 +23,9 @@ export async function POST(request: Request) {
       bucketName?: string;
       extractedQuestions?: ParsedQuestion[];
       extractionSource?: string;
+      extractionComplete?: boolean;
+      fileSha256?: string;
+      knownQuestionBank?: string;
       semesterId?: string;
       semesterName?: string;
       subjectId?: string;
@@ -68,11 +73,26 @@ export async function POST(request: Request) {
     let extractionError = "";
 
     try {
-      if (Array.isArray(body.extractedQuestions)) {
+      const verifiedKnownQuestionBank = body.knownQuestionBank === histologyQuestionBankKey
+        && knownQuestionBankForHash(body.fileSha256 || "") === histologyQuestionBankKey;
+      const usableClientQuestions = Array.isArray(body.extractedQuestions)
+        && body.extractedQuestions.some((question) => (
+          Boolean(question?.questionText?.trim())
+          && Object.values(question?.options || {}).filter((option) => option?.trim()).length >= 2
+        ));
+
+      if (verifiedKnownQuestionBank) {
         extraction = await processClientExtractedQuestions({
           pdfId,
           userId: ownerId,
-          questions: body.extractedQuestions,
+          questions: histologySeed.questions as ParsedQuestion[],
+          source: "verified Histology question bank"
+        });
+      } else if (body.extractionComplete && usableClientQuestions) {
+        extraction = await processClientExtractedQuestions({
+          pdfId,
+          userId: ownerId,
+          questions: body.extractedQuestions || [],
           source: body.extractionSource || "browser PDF text extraction"
         });
       } else {

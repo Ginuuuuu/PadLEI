@@ -9,6 +9,7 @@ import { useAuth } from "@/components/AuthProvider";
 import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { medicalSubjectPresets } from "@/lib/academic";
+import { knownQuestionBankForHash } from "@/lib/known-question-bank-fingerprints";
 import { useAcademicCatalog } from "@/lib/use-academic-catalog";
 
 const maxSizeMb = 20;
@@ -48,6 +49,9 @@ type CloudinaryUpload = {
 type BrowserExtraction = {
   questions: ParsedQuestion[];
   source: string;
+  complete: boolean;
+  fileSha256?: string;
+  knownQuestionBank?: string;
 };
 
 type BrowserPdfTextItem = {
@@ -120,11 +124,22 @@ export function PdfUploader() {
       setStage("extracting");
       let browserExtraction: BrowserExtraction;
       try {
-        browserExtraction = await extractQuestionsInBrowser(file);
+        const fileSha256 = await sha256File(file);
+        const knownQuestionBank = knownQuestionBankForHash(fileSha256);
+        browserExtraction = knownQuestionBank
+          ? {
+              questions: [],
+              source: "verified built-in question bank",
+              complete: true,
+              fileSha256,
+              knownQuestionBank
+            }
+          : await extractQuestionsInBrowser(file);
       } catch (error) {
         browserExtraction = {
           questions: [],
-          source: `browser PDF extraction unavailable: ${error instanceof Error ? error.message : "unknown error"}`
+          source: `browser PDF extraction unavailable: ${error instanceof Error ? error.message : "unknown error"}`,
+          complete: false
         };
       }
 
@@ -267,6 +282,7 @@ async function extractQuestionsInBrowser(file: File): Promise<BrowserExtraction>
         text,
         pageNumber,
         bounds: browserLineBounds(group, canvas.width, canvas.height),
+        highlighted: detectBrowserAnswerHighlight(group, image, canvas.width, canvas.height),
         styled: detectBrowserStyledAnswer(group)
       });
     }
@@ -280,7 +296,8 @@ async function extractQuestionsInBrowser(file: File): Promise<BrowserExtraction>
 
   return {
     questions,
-    source: pdfDocument.numPages > maxPages ? `browser PDF line extraction, first ${maxPages} pages` : "browser PDF line extraction"
+    source: pdfDocument.numPages > maxPages ? `browser PDF line extraction, first ${maxPages} pages` : "browser PDF line extraction",
+    complete: pdfDocument.numPages <= maxPages
   };
 }
 
@@ -359,6 +376,31 @@ function detectBrowserStyledAnswer(group: BrowserLineGroup) {
   const text = buildBrowserLineText(group.items);
   if (!/^(?:[\u2713\u2714\u2705\u2611\u221a]\s*|\[\s*x\s*\]\s*|\(\s*x\s*\)\s*)?(?:Hint\s*)?(?:\(?[A-F\u0410\u0430\u0411\u0431\u0412\u0432\u0413\u0433\u0414\u0434\u0415\u0435]\)?|[1-6])[\).:\-]/i.test(text)) return false;
   return group.items.some((item) => Math.abs(item.skew) > 0.5 || /italic|oblique/i.test(item.fontName || ""));
+}
+
+function detectBrowserAnswerHighlight(group: BrowserLineGroup, image: Uint8ClampedArray, width: number, height: number) {
+  const x0 = Math.max(0, Math.floor(Math.min(...group.items.map((item) => item.x0)) - 4));
+  const x1 = Math.min(width - 1, Math.ceil(Math.max(...group.items.map((item) => item.x1)) + 4));
+  const y0 = Math.max(0, Math.floor(Math.min(...group.items.map((item) => item.yTop)) - 3));
+  const y1 = Math.min(height - 1, Math.ceil(Math.max(...group.items.map((item) => item.yBottom)) + 3));
+  let answerColor = 0;
+  let total = 0;
+
+  for (let y = y0; y <= y1; y += 2) {
+    for (let x = x0; x <= x1; x += 2) {
+      const index = (y * width + x) * 4;
+      const red = image[index];
+      const green = image[index + 1];
+      const blue = image[index + 2];
+      const alpha = image[index + 3];
+      const yellow = red > 170 && green > 150 && blue < 120 && red >= green - 30;
+      const greenHighlight = green > 90 && green > red * 1.35 && green > blue * 1.2 && red < 130;
+      total += 1;
+      if (alpha > 0 && (yellow || greenHighlight)) answerColor += 1;
+    }
+  }
+
+  return answerColor / Math.max(1, total) > 0.25;
 }
 
 function attachBrowserDiagrams(questions: ParsedQuestion[], lines: ExtractedLine[], pages: BrowserRenderedPage[]) {
@@ -563,12 +605,23 @@ async function completeCloudinaryUpload(
       bucketName: signature.bucketName,
       extractedQuestions: extraction.questions,
       extractionSource: extraction.source,
+      extractionComplete: extraction.complete,
+      fileSha256: extraction.fileSha256,
+      knownQuestionBank: extraction.knownQuestionBank,
       ...organization
     })
   });
   const payload = await readPayload<UploadResult>(response);
   if (!response.ok || !payload.pdfId || !payload.storagePath) throw new Error(payload.error || "PDF uploaded, but extraction could not start.");
   return payload;
+}
+
+async function sha256File(file: File) {
+  const digest = await crypto.subtle.digest("SHA-256", await file.arrayBuffer());
+  return Array.from(new Uint8Array(digest))
+    .map((byte) => byte.toString(16).padStart(2, "0"))
+    .join("")
+    .toUpperCase();
 }
 
 function showUploadResult(uploaded: UploadResult) {

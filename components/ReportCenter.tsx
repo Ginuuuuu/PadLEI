@@ -12,6 +12,7 @@ import { Select } from "@/components/ui/input";
 import { dataOwnerId } from "@/lib/account";
 import { academicSummary, averagePercentage, normalizeAcademicName } from "@/lib/academic";
 import { db } from "@/lib/firebase";
+import { loadExamResult } from "@/lib/exam-results-client";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { useAcademicCatalog } from "@/lib/use-academic-catalog";
 import type { ActualExamScore, ExamResult } from "@/types/models";
@@ -68,9 +69,14 @@ export function ReportCenter() {
     if (!appUser) return;
     setBusy(kind);
     try {
+      let reportResults = results;
+      if (kind === "mock") {
+        const detailedResult = await loadExamResult(mockId);
+        reportResults = results.map((result) => result.resultId === detailedResult.resultId ? detailedResult : result);
+      }
       const report = buildReport(kind, {
         appUser,
-        results,
+        results: reportResults,
         scores,
         mockId,
         scoreId,

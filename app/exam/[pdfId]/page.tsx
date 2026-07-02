@@ -14,6 +14,7 @@ import { Card } from "@/components/ui/card";
 import { Input, Select } from "@/components/ui/input";
 import { db } from "@/lib/firebase";
 import { dataOwnerId } from "@/lib/account";
+import { readExamDraft } from "@/lib/exam-draft";
 import { handleSnapshotError } from "@/lib/firestore-errors";
 import { isReadyQuestion } from "@/lib/question-options";
 import { safeNumber } from "@/lib/utils";
@@ -25,6 +26,7 @@ export default function ExamPage() {
   const [pdf, setPdf] = useState<PdfFile | null>(null);
   const [questions, setQuestions] = useState<Question[]>([]);
   const [settings, setSettings] = useState<ExamSettings | null>(null);
+  const [draftCheckedFor, setDraftCheckedFor] = useState("");
   const readyQuestions = questions.filter(isReadyQuestion);
   const reviewCount = Math.max(0, questions.length - readyQuestions.length);
   const maxQuestion = Math.max(...readyQuestions.map((item) => item.questionNumber), 1);
@@ -40,6 +42,16 @@ export default function ExamPage() {
       (error) => handleSnapshotError(error, "exam questions")
     );
   }, [appUser, params.pdfId]);
+
+  useEffect(() => {
+    if (!appUser || !pdf || !readyQuestions.length) return;
+    const ownerId = dataOwnerId(appUser);
+    const checkKey = `${ownerId}:${params.pdfId}`;
+    if (draftCheckedFor === checkKey) return;
+    const draft = readExamDraft(ownerId, params.pdfId);
+    if (draft) setSettings(draft.settings);
+    setDraftCheckedFor(checkKey);
+  }, [appUser, draftCheckedFor, params.pdfId, pdf, readyQuestions.length]);
 
   function start(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -64,7 +76,7 @@ export default function ExamPage() {
       <AppShell>
         <PageHeader title={settings ? "Mock Test" : "Configure Mock Test"} description={pdf?.fileName || "Set your test preferences before beginning."} />
         {settings ? (
-          <ExamRunner allQuestions={questions} settings={settings} />
+          <ExamRunner allQuestions={questions} settings={settings} onDiscard={() => setSettings(null)} />
         ) : !readyQuestions.length ? (
           <Card className="text-sm text-slate-600">
             <p>No ready questions are available for this PDF yet.</p>

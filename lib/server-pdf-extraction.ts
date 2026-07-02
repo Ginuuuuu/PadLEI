@@ -412,7 +412,7 @@ async function extractPdfContent(buffer: Buffer): Promise<PdfTextExtraction> {
         text,
         pageNumber,
         bounds,
-        highlighted: detectYellowHighlight(group, image, canvas.width, canvas.height),
+        highlighted: detectAnswerHighlight(group, image, canvas.width, canvas.height),
         styled: detectStyledAnswerMarker(group)
       });
     }
@@ -525,23 +525,23 @@ function lineBounds(group: PdfLineGroup, pageWidth: number, pageHeight: number) 
   };
 }
 
-function detectYellowHighlight(group: PdfLineGroup, image: Uint8ClampedArray, width: number, height: number) {
+function detectAnswerHighlight(group: PdfLineGroup, image: Uint8ClampedArray, width: number, height: number) {
   const x0 = Math.max(0, Math.floor(Math.min(...group.items.map((item) => item.x0)) - 4));
   const x1 = Math.min(width - 1, Math.ceil(Math.max(...group.items.map((item) => item.x1)) + 4));
   const y0 = Math.max(0, Math.floor(Math.min(...group.items.map((item) => item.yTop)) - 3));
   const y1 = Math.min(height - 1, Math.ceil(Math.max(...group.items.map((item) => item.yBottom)) + 3));
-  let yellow = 0;
+  let answerColor = 0;
   let total = 0;
 
   for (let y = y0; y <= y1; y += 2) {
     for (let x = x0; x <= x1; x += 2) {
       const index = (y * width + x) * 4;
       total += 1;
-      if (isYellowPixel(image[index], image[index + 1], image[index + 2], image[index + 3])) yellow += 1;
+      if (isAnswerHighlightPixel(image[index], image[index + 1], image[index + 2], image[index + 3])) answerColor += 1;
     }
   }
 
-  return yellow / Math.max(1, total) > 0.25;
+  return answerColor / Math.max(1, total) > 0.25;
 }
 
 function detectStyledAnswerMarker(group: PdfLineGroup) {
@@ -550,8 +550,10 @@ function detectStyledAnswerMarker(group: PdfLineGroup) {
   return group.items.some((item) => Math.abs(item.skew) > 0.5 || /italic|oblique/i.test(item.fontName || ""));
 }
 
-function isYellowPixel(red: number, green: number, blue: number, alpha: number) {
-  return alpha > 0 && red > 170 && green > 150 && blue < 120 && red >= green - 30;
+function isAnswerHighlightPixel(red: number, green: number, blue: number, alpha: number) {
+  const yellow = red > 170 && green > 150 && blue < 120 && red >= green - 30;
+  const greenHighlight = green > 90 && green > red * 1.35 && green > blue * 1.2 && red < 130;
+  return alpha > 0 && (yellow || greenHighlight);
 }
 
 async function extractWithPdfJs(buffer: Buffer) {
