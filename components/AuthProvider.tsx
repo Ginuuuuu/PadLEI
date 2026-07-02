@@ -85,6 +85,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
           return;
         }
 
+        
         try {
           await refreshAppUser();
         } catch (error) {
